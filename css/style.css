@@ -705,17 +705,24 @@ input { font-family: inherit; }
 .fhr-avatar { width: 44px; height: 44px; border-radius: 6px; overflow: hidden; background: var(--bg); flex-shrink: 0; border: 1px solid var(--line); }
 .fhr-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .fhr-avatar-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg,#e8f5e9,#c8e6c9); }
-.fhr-car-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.fhr-car-top { display: flex; align-items: center; gap: 4px; }
-.fhr-rating { flex-shrink: 0; font-size: 11px; font-weight: 900; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 4px; color: #fff; }
+/* 车辆区域：评级角标在车图左上角 + 名称 + 身价 */
+.fhr-car-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fhr-car-img-wrap { position: relative; display: inline-block; line-height: 0; }
+.fhr-car-img-wrap img { vertical-align: top; }
+/* 评级角标：绝对定位在车辆素材左上角 */
+.fhr-rating { position: absolute; top: -2px; left: -2px; font-size: 11px; font-weight: 900; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 4px; color: #fff; z-index: 2; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .fhr-rating.rating-D { background: #9ca3af; } .fhr-rating.rating-C { background: #4ea8de; }
 .fhr-rating.rating-B { background: #9d4edd; } .fhr-rating.rating-A { background: #e9c46a; } .fhr-rating.rating-S { background: #e63946; }
-.fhr-name { font-size: 13px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fhr-networth { font-size: 12px; font-weight: 700; color: var(--sub); margin-left: 22px; }
-.fhr-action { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.fhr-cost { font-size: 12px; font-weight: 800; color: var(--green); white-space: nowrap; }
+.fhr-name { font-size: 13px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.fhr-networth { font-size: 12px; font-weight: 700; color: var(--sub); }
+.fhr-nw-icon { font-size: 13px; }
+.fhr-action { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 56px; }
+.fhr-cost { font-size: 13px; font-weight: 800; color: var(--green); white-space: nowrap; }
+/* 挖角忙碌标签 */
+.fhr-busy-tag { font-size: 11px; font-weight: 700; color: #ef4444; background: #fef2f2; padding: 2px 8px; border-radius: 8px; white-space: nowrap; }
 .emp-action-btn { padding: 5px 14px; border-radius: 8px; background: var(--panel); color: var(--accent); font-weight: 800; font-size: 12px; border: 1.5px solid var(--accent); cursor: pointer; white-space: nowrap; transition: all .15s; }
 .emp-action-btn:active { background: var(--accent); color: #fff; }
+.emp-action-btn.btn-disabled { opacity: .5; cursor: not-allowed; border-color: var(--line); color: var(--sub); }
 
 /* --- A10 首充（新版） --- */
 .fc-modal { padding: 4px 0; }

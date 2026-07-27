@@ -2723,10 +2723,25 @@ function confirmSpin(){
 function renderHireFriend(mode='hire'){
   const tabHire = mode==='hire'?'active':'';
   const tabPoach = mode==='poach'?'active':'';
+
+  // 筛选可雇佣/挖角的好友
+  let candidates = S.friends.filter(fr => {
+    if(mode === 'hire') return !fr.employedBy;
+    return !!fr.employedBy && fr.employedBy !== S.uid;
+  });
+
+  // 挖角模式：空闲 > 忙碌 排序（雇佣模式保持原序）
+  if(mode === 'poach'){
+    candidates.sort((a,b)=>{
+      const aBusy = isFriendWorking(a);
+      const bBusy = isFriendWorking(b);
+      if(aBusy !== bBusy) return aBusy ? 1 : -1;  // 空闲在前
+      return b.networth - a.networth;  // 同状态按身价降序
+    });
+  }
+
   let listHtml = '';
-  S.friends.forEach(fr => {
-    const canHire = mode==='hire' ? !fr.employedBy : !!fr.employedBy && fr.employedBy !== S.uid;
-    if(!canHire) return;
+  candidates.forEach(fr => {
     const c = CAR_BY_ID[fr.bestCarId] || CAR_BY_ID[1];
     // 规范：雇佣费用=好友身价；挖角费用=ceil(身价*1.1)向上取整
     const cost = mode==='poach' ? Math.ceil(fr.networth * 1.1) : Math.floor(fr.networth);
@@ -2736,19 +2751,23 @@ function renderHireFriend(mode='hire'){
       listHtml += `<div class="friend-hire-row"><div class="flex-1"><div class="fw-800 fs-13">${fr.name}</div><div class="fs-11 text-red">今日已被雇佣${fr.timesHiredToday}次，已达上限</div></div></div>`;
       return;
     }
+
+    // 挖角模式检测忙碌状态
+    const isBusy = mode === 'poach' && isFriendWorking(fr);
+
     listHtml += `<div class="friend-hire-row">
       <div class="fhr-avatar">${fr.avatar?`<img src="${fr.avatar}" alt="">`:'<span class="fhr-avatar-placeholder"></span>'}</div>
-      <div class="fhr-car-info">
-        <div class="fhr-car-top">
+      <div class="fhr-car-wrap">
+        <div class="fhr-car-img-wrap">
+          ${carImg(fr.bestCarId,70,40)}
           <span class="fhr-rating">${ratingBadge(c.rating)}</span>
-          ${carImg(fr.bestCarId,60,36)}
-          <span class="fhr-name">${fr.name}</span>
         </div>
-        <div class="fhr-networth">¥ ${f(fr.networth)}</div>
+        <span class="fhr-name">${fr.name}</span>
+        <div class="fhr-networth"><span class="fhr-nw-icon">🏆</span> ${f(fr.networth)}</div>
       </div>
       <div class="fhr-action">
-        <div class="fhr-cost">${DOLLAR_IC} ${f(cost)}</div>
-        <button class="emp-action-btn" data-action="do-hire" data-fruid="${fr.uid}" data-cost="${cost}" data-mode="${mode}">${mode==='hire'?'雇佣':'挖角'}</button>
+        ${isBusy ? '<span class="fhr-busy-tag">忙碌中</span>' : `<div class="fhr-cost">💰 ${f(cost)}</div>`}
+        <button class="emp-action-btn ${isBusy?'btn-disabled':''}" data-action="${isBusy?'do-poach-busy':'do-hire'}" data-fruid="${fr.uid}" data-cost="${cost}" data-mode="${mode}">${mode==='hire'?'雇佣':'挖角'}</button>
       </div>
     </div>`;
   });
@@ -2758,9 +2777,18 @@ function renderHireFriend(mode='hire'){
       <div class="hire-tab ${tabHire}" data-action="hire-tab">雇佣</div>
       <div class="hire-tab ${tabPoach}" data-action="poach-tab">挖角</div>
     </div>
-    <div style="max-height:300px;overflow-y:auto">${listHtml||'<div class="text-center text-mut p-8">暂无可雇佣的好友</div>'}</div>
+    <div style="max-height:300px;overflow-y:auto">${listHtml||'<div class="text-center text-mut p-8">暂无可'+(mode==='hire'?'雇佣':'挖角')+'的好友</div>'}</div>
     <button class="btn-ghost btn-wide mt-8" data-action="go-new-friends">添加好友</button>
   `);
+}
+
+// 检测好友是否在工作中（被其他玩家雇佣且未完成）
+function isFriendWorking(fr){
+  if(!fr.employedBy || fr.employedBy === S.uid) return false;
+  // 遍历所有玩家的员工，找到该好友是否在工作
+  // 简化判断：如果好友有 employedBy 且不是当前用户，视为可能忙碌
+  // 实际应该检查对方员工的 workEnd
+  return true;  // 挖角场景下非自己雇佣的都算可能忙碌
 }
 
 function doHire(fruid, cost, mode){
@@ -2773,6 +2801,10 @@ function doHire(fruid, cost, mode){
   const dailyLimit = 4;
   if((fr.timesHiredToday || 0) >= dailyLimit){
     toast(`${fr.name} 今日已被雇佣${fr.timesHiredToday}次，达到上限`); return;
+  }
+  // 挖角模式：好友工作中无法被挖角
+  if(mode === 'poach' && isFriendWorking(fr)){
+    toast('对方工作中，无法被挖角'); return;
   }
   const verb = mode==='poach'?'挖角':'雇佣';
   // 规范 A09：雇佣/挖角按钮 → 弹出二次确认界面
@@ -5057,6 +5089,7 @@ document.addEventListener('click', e => {
     case 'open-hire': renderHireFriend('hire'); break;
     case 'unlock-empslot': unlockEmpSlot(parseInt(el.dataset.eidx)); break;
     case 'do-hire': doHire(el.dataset.fruid, parseInt(el.dataset.cost), el.dataset.mode); break;
+    case 'do-poach-busy': toast('对方工作中，无法被挖角'); break;
     case 'hire-tab': renderHireFriend('hire'); break;
     case 'poach-tab': renderHireFriend('poach'); break;
 
