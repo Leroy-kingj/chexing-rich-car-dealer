@@ -1155,12 +1155,6 @@ function boot(){
     window.ChexingSDK.initLogin().catch(e => {
       console.warn('[ChexingSDK] Login init failed:', e);
     });
-    // 已登录则启动防沉迷合规；并做一次正版校验与更新检测（仅在有更新/盗版时弹窗）
-    if(S.taptap){
-      ttComplianceStart();
-    }
-    window.ChexingSDK.checkLicense().catch(e => console.warn('[ChexingSDK] License check failed:', e));
-    window.ChexingSDK.checkUpdate().catch(e => console.warn('[ChexingSDK] Update check failed:', e));
   }
 
   // 调试钩子（仅供自动化测试访问内部状态/函数）
@@ -1194,15 +1188,10 @@ function boot(){
     shareGame,
     // TapTap 登录
     tapLogin, tapLogout,
-    // TapTap 七大功能模块
-    ttReview, ttShareToTapTap, ttOpenLeaderboard, ttShowAchievements, ttCheckUpdate, ttCheckLicense, ttComplianceStart,
     // SDK
     ChexingSDK: () => window.ChexingSDK
   };
 }
-
-// 页面关闭/刷新前强制保存（防止安排员工等操作后因时序问题丢失 empIid 等字段）
-window.addEventListener('beforeunload', () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch(e){} });
 
 // 页面加载后启动
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
@@ -1469,22 +1458,33 @@ function renderParkCard(inst, idx){
   const rmS = String(remainSec % 60).padStart(2, '0');
   const rm = remainSec > 0 ? `${rmH}:${rmM}:${rmS}` : '已满仓';
 
-  // 员工信息仅在收入进度区显示（pc-income-emp-wrap），不在车图上叠加头像
+  // 工作员工信息（叠加在车图左下角）
   let workEmpHtml = '';
+  if(inst.empIid){
+    const emp = S.employees.find(e => e.iid === inst.empIid);
+    if(emp && emp.workEnd > now()){
+      const eidx = S.employees.indexOf(emp);
+      const remain = Math.ceil((emp.workEnd - now()) / 1000);
+      const h = String(Math.floor(remain / 3600)).padStart(2,'0');
+      const m = String(Math.floor((remain % 3600) / 60)).padStart(2,'0');
+      const s = String(remain % 60).padStart(2,'0');
+      workEmpHtml = `
+        <div class="pc-driver-overlay busy" data-action="emp-info" data-eidx="${eidx}" title="${emp.name} 工作中 剩余${h}:${m}:${s}" style="display:flex!important;visibility:visible!important;opacity:1!important;">
+          ${renderEmpAvatar(emp)}
+          <span class="pc-driver-status busy"></span>
+        </div>`;
+    }
+  }
 
   // 布局：员工头像+收入进度(含内联收取按钮) → 车图(含评级/品牌叠加/工作员工) → 倒计时
   // 收入进度区员工头像（圆形，显示当前安排在此车工作的员工）
   let incomeEmpHtml = '';
-  // 主路径：通过 inst.empIid 查找
-  let iemp = inst.empIid ? S.employees.find(e => e.iid === inst.empIid) : null;
-  // 兜底路径：empIid 丢失时，通过员工的 workCarIid 反向查找（防止刷新后字段不一致）
-  if(!iemp && inst.iid){
-    iemp = S.employees.find(e => e.workCarIid === inst.iid && e.workEnd > 0);
-    if(iemp) inst.empIid = iemp.iid; // 自动修复 empIid
-  }
-  if(iemp){
+  if(inst.empIid){
+    const iemp = S.employees.find(e => e.iid === inst.empIid);
+    if(iemp){
       const busy = iemp.workEnd > now();
       incomeEmpHtml = `<div class="pc-income-emp-wrap ${busy?'busy':'idle'}" data-action="emp-info" data-eidx="${S.employees.indexOf(iemp)}" title="${iemp.name}${busy?' 工作中':' 空闲'}">${renderEmpAvatar(iemp, 26)}<span class="pc-income-emp-name">${iemp.name}</span></div>`;
+    }
   }
   return `<div class="park-card" data-spot="${idx}">
     <!-- 收入进度（含员工头像 + 内联收取按钮） -->
@@ -1747,18 +1747,6 @@ function renderProfile(){
             <button class="uip-tt-login-btn" data-action="tap-login">TapTap 登录</button>
           `}
         </div>
-        ${(window.ChexingSDK && window.ChexingSDK.isNative) ? `
-        <div class="uip-tt-services">
-          <div class="uip-tt-services-title">TapTap 服务</div>
-          <div class="uip-tt-service-grid">
-            <button class="uip-tt-svc-btn" data-action="tt-review">⭐ 去评价</button>
-            <button class="uip-tt-svc-btn" data-action="tt-share">📤 分享游戏</button>
-            <button class="uip-tt-svc-btn" data-action="tt-leaderboard">🏆 排行榜</button>
-            <button class="uip-tt-svc-btn" data-action="tt-achievements">🎖️ 我的成就</button>
-            <button class="uip-tt-svc-btn" data-action="tt-check-update">🔄 检查更新</button>
-            <button class="uip-tt-svc-btn" data-action="tt-check-license">✅ 正版验证</button>
-          </div>
-        </div>` : ``}
         <div class="uip-boss-row">
           <div class="uip-boss-cell">
             <div class="uip-boss-label">现任老板</div>
@@ -1812,7 +1800,6 @@ async function tapLogin(){
       };
       save();
       toast('TapTap 登录成功：' + (S.taptap.name || S.taptap.openid));
-      ttComplianceStart();   // 登录成功后启动防沉迷合规
       renderProfile();
     } else {
       const m = (r && r.msg) || '';
@@ -1832,85 +1819,11 @@ async function tapLogin(){
 async function tapLogout(){
   if(window.ChexingSDK){
     try { await window.ChexingSDK.logout(); } catch(e){ /* 忽略原生错误，仍清除本地态 */ }
-    try { if(window.ChexingSDK.complianceExit) await window.ChexingSDK.complianceExit(); } catch(e){}
   }
   S.taptap = null;
   save();
   toast('已退出 TapTap 登录');
   renderProfile();
-}
-
-/* ==================== TapTap 七大功能模块 ==================== */
-// 在 TapTap 开发者后台配置的榜单 ID（留空则原生端会提示）。可在此填入你的真实榜单 ID。
-const TAPTAP_LEADERBOARD_ID = '';
-
-// 启动防沉迷合规（登录成功后或游戏启动时调用）
-async function ttComplianceStart(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative) return;
-  const openId = (S.taptap && (S.taptap.openid || S.taptap.unionid)) || '';
-  try { await window.ChexingSDK.complianceStartup({ openId }); }
-  catch(e){ console.warn('[TapTap] compliance startup failed', e); }
-}
-
-// 去评价
-async function ttReview(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中使用评价功能'); return; }
-  toast('正在打开 TapTap 评价...');
-  const r = await window.ChexingSDK.openReview();
-  if(!(r && r.success)) toast((r && r.msg) ? ('打开评价失败：' + r.msg) : '打开评价失败');
-}
-
-// 分享游戏到 TapTap 动态
-async function ttShareToTapTap(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中使用分享功能'); return; }
-  toast('正在调起 TapTap 分享...');
-  const r = await window.ChexingSDK.shareToTapTap({
-    title: '首富车行',
-    contents: '我在首富车行当老板，资产破亿！快来一起经营你的车行帝国～'
-  });
-  if(r && r.success) toast('分享成功');
-  else toast((r && r.msg) ? ('分享失败：' + r.msg) : '分享失败');
-}
-
-// 打开排行榜
-async function ttOpenLeaderboard(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中查看排行榜'); return; }
-  if(!TAPTAP_LEADERBOARD_ID){
-    toast('排行榜尚未配置（请在 app.js 设置 TAPTAP_LEADERBOARD_ID）');
-    return;
-  }
-  toast('正在打开 TapTap 排行榜...');
-  const r = await window.ChexingSDK.openLeaderboard({
-    leaderboardId: TAPTAP_LEADERBOARD_ID,
-    openId: (S.taptap && (S.taptap.openid || S.taptap.unionid)) || ''
-  });
-  if(!(r && r.success)) toast((r && r.msg) ? ('打开排行榜失败：' + r.msg) : '打开排行榜失败');
-}
-
-// 打开成就面板
-async function ttShowAchievements(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中查看成就'); return; }
-  toast('正在打开 TapTap 成就...');
-  const r = await window.ChexingSDK.showAchievements();
-  if(!(r && r.success)) toast((r && r.msg) ? ('打开成就失败：' + r.msg) : '打开成就失败');
-}
-
-// 检查更新
-async function ttCheckUpdate(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中检查更新'); return; }
-  toast('正在检查更新...');
-  const r = await window.ChexingSDK.checkUpdate();
-  if(r && r.success) toast('已检查更新（如有新版本将自动提示）');
-  else toast((r && r.msg) ? ('检查更新失败：' + r.msg) : '检查更新失败');
-}
-
-// 正版验证
-async function ttCheckLicense(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中进行正版验证'); return; }
-  toast('正在进行正版验证...');
-  const r = await window.ChexingSDK.checkLicense();
-  if(r && r.success) toast('正版验证完成');
-  else toast((r && r.msg) ? ('正版验证失败：' + r.msg) : '正版验证失败');
 }
 
 /* ==================== A04b 礼包码 ==================== */
@@ -3131,16 +3044,11 @@ function renderGarageTab(){
       const cap = capOf(inst);
       // 图片区左上角图标：统一使用品牌LOGO
       const imgCornerIcon = `<span class="gg-img-corner gg-img-corner-logo">${logoImg(c.brand)}</span>`;
-      // 工作员工信息（叠加在车图左下角）
+      // 工作员工信息（显示在卡片信息区，参考车行 pc-income-emp-wrap）
       let garageEmpInfo = '';
-      // 主路径：通过 inst.empIid 查找
-      let gemp = inst.empIid ? S.employees.find(e => e.iid === inst.empIid) : null;
-      // 兜底路径：empIid 丢失时，通过员工的 workCarIid 反向查找
-      if(!gemp && inst.iid){
-        gemp = S.employees.find(e => e.workCarIid === inst.iid && e.workEnd > 0);
-        if(gemp) inst.empIid = gemp.iid; // 自动修复 empIid
-      }
-      if(gemp && gemp.workEnd > now()){
+      if(inst.empIid){
+        const gemp = S.employees.find(e => e.iid === inst.empIid);
+        if(gemp && gemp.workEnd > now()){
           const geidx = S.employees.indexOf(gemp);
           const busy = true;
           garageEmpInfo = `<div class="gg-card-emp-wrap ${busy?'busy':'idle'}" data-action="emp-info" data-eidx="${geidx}" title="${gemp.name}${busy?' 工作中':''}">${renderEmpAvatar(gemp, 26)}<span class="gg-card-emp-name">${gemp.name}</span></div>`;
@@ -3181,7 +3089,6 @@ function renderGarageTab(){
           ${imgCornerIcon}
           ${thumb(c.id)}
           <span class="gg-card-status ${statusCls}">${statusIcon}${statusTxt}</span>
-          ${garageEmpInfo ? `<div class="gg-card-emp-overlay">${garageEmpInfo}</div>` : ''}
         </div>
         <!-- 统计数据（非好友家车辆） -->
         ${inst.atFriend ? '' : `<div class="gg-card-stats">
@@ -3190,6 +3097,8 @@ function renderGarageTab(){
         </div>`}
         <!-- 好友家车辆信息（替代统计） -->
         ${friendInfo}
+        <!-- 工作员工信息（信息区显示） -->
+        ${garageEmpInfo}
         <!-- 操作按钮 -->
         ${actionBtn}
       </div>`;
@@ -5018,13 +4927,6 @@ document.addEventListener('click', e => {
     // TapTap 登录
     case 'tap-login': tapLogin(); break;
     case 'tap-logout': tapLogout(); break;
-    // TapTap 七大功能模块
-    case 'tt-review': ttReview(); break;
-    case 'tt-share': ttShareToTapTap(); break;
-    case 'tt-leaderboard': ttOpenLeaderboard(); break;
-    case 'tt-achievements': ttShowAchievements(); break;
-    case 'tt-check-update': ttCheckUpdate(); break;
-    case 'tt-check-license': ttCheckLicense(); break;
 
     // 消息
     case 'claim-msg-reward': claimMsgReward(el.dataset.mid); break;
