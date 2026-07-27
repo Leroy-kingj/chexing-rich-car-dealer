@@ -1103,7 +1103,7 @@ function tick(){
 let current = 'loading';
 let visiting = false; // 是否在拜访模式
 
-const SCREEN_TITLES = { home:'首富车行', garage:'首富车行', market:'首富车行', friends:'首富车行', messages:'首富车行' };
+const SCREEN_TITLES = { home:'抢车位：华夏崛起', garage:'抢车位：华夏崛起', market:'抢车位：华夏崛起', friends:'抢车位：华夏崛起', messages:'抢车位：华夏崛起' };
 function setTitle(t){ const el=$('#tb-title'); if(el) el.textContent=t; }
 
 function go(name){
@@ -1121,7 +1121,7 @@ function go(name){
   else if(name === 'friends') renderFriends();
   else if(name === 'messages') renderMessages();
   else if(name === 'gachaTarget'){ if(_gachaTarget) renderGachaTargetScene(_gachaMode, _gachaTarget); }
-  setTitle(SCREEN_TITLES[name] || '首富车行');
+  setTitle(SCREEN_TITLES[name] || '抢车位：华夏崛起');
   closeModal();
 }
 
@@ -1200,6 +1200,9 @@ function boot(){
     ChexingSDK: () => window.ChexingSDK
   };
 }
+
+// 页面关闭/刷新前强制保存（防止安排员工等操作后因时序问题丢失 empIid 等字段）
+window.addEventListener('beforeunload', () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch(e){} });
 
 // 页面加载后启动
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
@@ -1472,12 +1475,16 @@ function renderParkCard(inst, idx){
   // 布局：员工头像+收入进度(含内联收取按钮) → 车图(含评级/品牌叠加/工作员工) → 倒计时
   // 收入进度区员工头像（圆形，显示当前安排在此车工作的员工）
   let incomeEmpHtml = '';
-  if(inst.empIid){
-    const iemp = S.employees.find(e => e.iid === inst.empIid);
-    if(iemp){
+  // 主路径：通过 inst.empIid 查找
+  let iemp = inst.empIid ? S.employees.find(e => e.iid === inst.empIid) : null;
+  // 兜底路径：empIid 丢失时，通过员工的 workCarIid 反向查找（防止刷新后字段不一致）
+  if(!iemp && inst.iid){
+    iemp = S.employees.find(e => e.workCarIid === inst.iid && e.workEnd > 0);
+    if(iemp) inst.empIid = iemp.iid; // 自动修复 empIid
+  }
+  if(iemp){
       const busy = iemp.workEnd > now();
       incomeEmpHtml = `<div class="pc-income-emp-wrap ${busy?'busy':'idle'}" data-action="emp-info" data-eidx="${S.employees.indexOf(iemp)}" title="${iemp.name}${busy?' 工作中':' 空闲'}">${renderEmpAvatar(iemp, 26)}<span class="pc-income-emp-name">${iemp.name}</span></div>`;
-    }
   }
   return `<div class="park-card" data-spot="${idx}">
     <!-- 收入进度（含员工头像 + 内联收取按钮） -->
@@ -1858,8 +1865,8 @@ async function ttShareToTapTap(){
   if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中使用分享功能'); return; }
   toast('正在调起 TapTap 分享...');
   const r = await window.ChexingSDK.shareToTapTap({
-    title: '首富车行',
-    contents: '我在首富车行当老板，资产破亿！快来一起经营你的车行帝国～'
+    title: '抢车位：华夏崛起',
+    contents: '我在抢车位：华夏崛起当老板，资产破亿！快来一起经营你的车位帝国～'
   });
   if(r && r.success) toast('分享成功');
   else toast((r && r.msg) ? ('分享失败：' + r.msg) : '分享失败');
@@ -1976,9 +1983,9 @@ function redeemGiftCode(){
  */
 async function shareGame(opts = {}){
   const defaultOpts = {
-    title: '首富车行 - 我的车库帝国',
-    text: `我在《首富车行》拥有 ${S.inst.length} 辆车，总资产 ${f(S.dollars)} 刀乐！快来挑战我吧！`,
-    url: 'https://www.taptap.cn/app/车行', // TODO: 替换为实际 TapTap 游戏链接
+    title: '抢车位：华夏崛起 - 我的车库帝国',
+    text: `我在《抢车位：华夏崛起》拥有 ${S.inst.length} 辆车，总资产 ${f(S.dollars)} 刀乐！快来挑战我吧！`,
+    url: 'https://www.taptap.cn/app/抢车位：华夏崛起', // TODO: 替换为实际 TapTap 游戏链接
   };
   const finalOpts = { ...defaultOpts, ...opts };
 
@@ -3124,15 +3131,19 @@ function renderGarageTab(){
       const cap = capOf(inst);
       // 图片区左上角图标：统一使用品牌LOGO
       const imgCornerIcon = `<span class="gg-img-corner gg-img-corner-logo">${logoImg(c.brand)}</span>`;
-      // 工作员工信息（显示在卡片信息区，参考车行 pc-income-emp-wrap）
+      // 工作员工信息（叠加在车图左下角）
       let garageEmpInfo = '';
-      if(inst.empIid){
-        const gemp = S.employees.find(e => e.iid === inst.empIid);
-        if(gemp && gemp.workEnd > now()){
+      // 主路径：通过 inst.empIid 查找
+      let gemp = inst.empIid ? S.employees.find(e => e.iid === inst.empIid) : null;
+      // 兜底路径：empIid 丢失时，通过员工的 workCarIid 反向查找
+      if(!gemp && inst.iid){
+        gemp = S.employees.find(e => e.workCarIid === inst.iid && e.workEnd > 0);
+        if(gemp) inst.empIid = gemp.iid; // 自动修复 empIid
+      }
+      if(gemp && gemp.workEnd > now()){
           const geidx = S.employees.indexOf(gemp);
           const busy = true;
           garageEmpInfo = `<div class="gg-card-emp-wrap ${busy?'busy':'idle'}" data-action="emp-info" data-eidx="${geidx}" title="${gemp.name}${busy?' 工作中':''}">${renderEmpAvatar(gemp, 26)}<span class="gg-card-emp-name">${gemp.name}</span></div>`;
-        }
       }
       // 好友家车辆信息
       const friendInfo = inst.atFriend ? (() => {
@@ -4191,7 +4202,7 @@ function renderMsgTab(){
   const mc = $('#msgContent'); if(!mc) return;
   if(msgTab === 'notice'){
     mc.innerHTML = `<div class="section"><h3>📢 公告</h3><div class="text-mut fs-12 p-8" style="white-space:pre-line">亲爱的玩家：
-欢迎使用首富车行！
+欢迎使用抢车位：华夏崛起！
 收集炫酷的跑车，组建自己的奢华车队吧！
 
 如有任何建议和疑问，请加入官方QQ群：1031327839</div></div>`;
