@@ -2737,12 +2737,19 @@ function renderHireFriend(mode='hire'){
       return;
     }
     listHtml += `<div class="friend-hire-row">
-      <div style="width:36px;height:36px;border-radius:50%;background:var(--bg);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px">😊</div>
-      <div class="flex-1">
-        <div class="fw-800 fs-13">${fr.name}</div>
-        <div class="fs-11 text-mut">${colorName(c.name)} · 身价 ${f(fr.networth)}</div>
+      <div class="fhr-avatar">${fr.avatar?`<img src="${fr.avatar}" alt="">`:'<span class="fhr-avatar-placeholder"></span>'}</div>
+      <div class="fhr-car-info">
+        <div class="fhr-car-top">
+          <span class="fhr-rating">${ratingBadge(c.rating)}</span>
+          ${carImg(fr.bestCarId,60,36)}
+          <span class="fhr-name">${fr.name}</span>
+        </div>
+        <div class="fhr-networth">¥ ${f(fr.networth)}</div>
       </div>
-      <button class="emp-action-btn btn-primary btn-sm" data-action="do-hire" data-fruid="${fr.uid}" data-cost="${cost}" data-mode="${mode}">${mode==='hire'?'雇佣':'挖角'} $${f(cost)}</button>
+      <div class="fhr-action">
+        <div class="fhr-cost">${DOLLAR_IC} ${f(cost)}</div>
+        <button class="emp-action-btn" data-action="do-hire" data-fruid="${fr.uid}" data-cost="${cost}" data-mode="${mode}">${mode==='hire'?'雇佣':'挖角'}</button>
+      </div>
     </div>`;
   });
   openModal(`
