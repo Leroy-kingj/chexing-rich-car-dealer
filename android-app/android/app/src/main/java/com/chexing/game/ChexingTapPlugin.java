@@ -212,12 +212,13 @@ public class ChexingTapPlugin extends Plugin {
     public void shareToTapTap(PluginCall call) {
         try {
             TapSdkHolder.ensureInit(getContext());
-            String title = call.getString("title", "首富车行");
-            String contents = call.getString("contents", "我在首富车行当老板，快来一起经营你的车行帝国！");
+            String title = call.getString("title", "抢车位：华夏崛起");
+            String contents = call.getString("contents", "我在《抢车位：华夏崛起》当老板，快来一起经营你的车行帝国！");
             String failUrl = call.getString("failUrl", "https://www.taptap.cn/app/3ahf55jztit22xj8cy");
 
             TapTapShareBuilder builder = new TapTapShareBuilder();
-            builder.addAppId();   // 注意：4.10.7 该重载返回 void，需单独调用（从已初始化的 SDK 读取 appId）
+            // 注意：appId 由 TapTapSdk.init 时传入的 CLIENT_ID 自动填充，4.10.x 的
+            // TapTapShareBuilder 不再需要（也无公开方法）手动 addAppId()，故此处省略。
             TapTapShare share = builder.addTitle(title)
                     .addContents(contents)
                     .addFailUrl(failUrl)

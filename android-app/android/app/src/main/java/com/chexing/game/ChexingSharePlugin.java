@@ -20,7 +20,7 @@ public class ChexingSharePlugin extends Plugin {
     @PluginMethod
     public void share(PluginCall call) {
         try {
-            String title = call.getString("title", "首富车行");
+            String title = call.getString("title", "抢车位：华夏崛起");
             String text = call.getString("text", "");
             String url = call.getString("url", "");
 
@@ -36,7 +36,7 @@ public class ChexingSharePlugin extends Plugin {
 
             Intent intent = new Intent(Intent.ACTION_SEND);
             intent.setType("text/plain");
-            intent.putExtra(Intent.EXTRA_SUBJECT, title != null ? title : "首富车行");
+            intent.putExtra(Intent.EXTRA_SUBJECT, title != null ? title : "抢车位：华夏崛起");
             intent.putExtra(Intent.EXTRA_TEXT, shareText.toString());
 
             if (url != null && !url.isEmpty()) {
@@ -61,7 +61,7 @@ public class ChexingSharePlugin extends Plugin {
     @PluginMethod
     public void shareImage(PluginCall call) {
         try {
-            String title = call.getString("title", "首富车行");
+            String title = call.getString("title", "抢车位：华夏崛起");
             String text = call.getString("text", "");
             String imagePath = call.getString("imagePath", "");
             String imageUrl = call.getString("imageUrl", "");
