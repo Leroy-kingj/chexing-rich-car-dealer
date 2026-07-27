@@ -1,0 +1,18 @@
+# 依赖（CI 会重新 npm install）
+node_modules/
+
+# 构建产物
+android/app/build/
+android/.gradle/
+android/captures/
+.gradle/
+
+# 签名密钥（切勿提交）
+*.keystore
+**/*.jks
+
+# OS / 编辑器
+.DS_Store
+*.iml
+.idea/
+.vscode/

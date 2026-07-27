@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>车辆素材分析工具</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 16px; }
+h1 { font-size: 18px; margin-bottom: 12px; color: #f59e0b; }
+.stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.stat-card { background: #1a1a2e; border-radius: 10px; padding: 12px 16px; min-width: 140px; }
+.stat-card .num { font-size: 28px; font-weight: 900; color: #f59e0b; }
+.stat-card .label { font-size: 11px; color: #888; margin-top: 2px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { background: #1a1a2e; padding: 8px 6px; text-align: left; position: sticky; top: 0; font-weight: 700; color: #aaa; }
+td { padding: 6px; border-bottom: 1px solid #222; vertical-align: middle; }
+tr:hover { background: #1a1a2e; }
+.img-cell { width: 100px; }
+.img-cell img { max-width: 90px; max-height: 55px; object-fit: contain; border-radius: 4px; }
+.bad-mismatch { background: rgba(239,68,68,.12); }
+.mismatch-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+.tag-conflict { background: #ef4444; color: #fff; }
+.tag-shared { background: #f59e0b; color: #000; }
+.tag-ok { background: #22c55e; color: #fff; }
+.rating-E { color: #f0f0f0; } .rating-D { color: #22c55e; } .rating-C { color: #3b82f6; }
+.rating-B { color: #a855f7; } .rating-A { color: #f59e0b; } .rating-S { color: #ef4444; }
+.section-title { font-size: 14px; font-weight: 800; margin: 20px 0 8px; color: #f59e0b; border-left: 3px solid #f59e0b; padding-left: 8px; }
+#summary { line-height: 1.8; font-size: 13px; background: #1a1a2e; padding: 14px; border-radius: 8px; margin-bottom: 16px; }
+.color-hint { font-style: italic; opacity: 0.7; }
+</style>
+</head>
+<body>
+<h1>🚗 车辆素材分析工具</h1>
+<div class="stats" id="stats"></div>
+<div id="summary"></div>
+
+<div class="section-title">📋 全部车辆列表（按图片分组）</div>
+<table>
+<thead><tr><th>ID</th><th>名称</th><th>品牌</th><th>评级</th><th>图片文件</th><th>预览</th><th>颜色提示</th><th>状态</th></tr></thead>
+<tbody id="carTable"></tbody>
+</table>
+
+<div class="section-title">⚠️ 颜色冲突（共享同一图片但名称颜色不同）</div>
+<table>
+<thead><tr><th>图片文件</th><th>共享车辆数</th><th>涉及ID</th><th>颜色冲突详情</th></tr></thead>
+<tbody id="conflictTable"></tbody>
+</table>
+
+<script src="game_data.js"></script>
+<script>
+const D = window.GAME_DATA;
+const cars = D.cars || [];
+
+// 颜色关键词提取
+function extractColorHint(name) {
+  const colors = {
+    '红': ['红', '赤', '朱', '绯', '焰', '火', 'Ruby', 'Rosso', 'Red'],
+    '蓝': ['蓝', '青', '靛', '蔚', 'Azure', 'Blue'],
+    '绿': ['绿', '翠', '碧', '翡翠', 'Apple', 'Green', 'Verde'],
+    '白': ['白', '银', '雪', '云', '霜', '珍珠', 'Pearl', 'White', 'Blanc'],
+    '黑': ['黑', '墨', '碳', '暗', '夜', '影', 'Black', 'Noir'],
+    '金': ['金', '黄', '香槟', 'Gold', 'Yellow'],
+    '橙': ['橙', '橘', '琥珀', 'Orange'],
+    '紫': ['紫', '罗兰', 'Violet', 'Purple'],
+    '灰': ['灰', '钛', '石墨', 'Grey', 'Gray'],
+    '粉': ['粉', '玫瑰', 'Rose', 'Pink']
+  };
+  const lower = name.toLowerCase();
+  for (const [color, keywords] of Object.entries(colors)) {
+    if (keywords.some(k => lower.includes(k.toLowerCase()) || name.includes(k))) return color;
+  }
+  return '';
+}
+
+// 按图片分组
+const byImage = {};
+cars.forEach(c => {
+  const img = c.image || '(none)';
+  if (!byImage[img]) byImage[img] = [];
+  byImage[img].push(c);
+});
+
+// 统计
+const totalCars = cars.length;
+const uniqueImages = Object.keys(byImage).length;
+const missingAssets = cars.filter(c => c.image && !byImage[c.image]).length;
+let conflictGroups = 0;
+let conflictCars = 0;
+const conflicts = [];
+
+for (const [img, group] of Object.entries(byImage)) {
+  if (group.length > 1) {
+    const colorSet = new Set(group.map(c => extractColorHint(c.name)).filter(Boolean));
+    if (colorSet.size > 1) {
+      conflictGroups++;
+      conflictCars += group.length;
+      conflicts.push({ img, group, colors: [...colorSet] });
+    }
+  }
+}
+
+// 渲染统计
+document.getElementById('stats').innerHTML = `
+  <div class="stat-card"><div class="num">${totalCars}</div><div class="label">总车辆数</div></div>
+  <div class="stat-card"><div class="num">${uniqueImages}</div><div class="label">唯一图片数</div></div>
+  <div class="stat-card"><div class="num">${conflictGroups}</div><div class="label">颜色冲突组</div></div>
+  <div class="stat-card"><div class="num">${conflictCars}</div><div class="label">涉及车辆</div></div>
+`;
+
+document.getElementById('summary').innerHTML = `
+  <strong>分析结果：</strong>共 ${totalCars} 辆车使用 ${uniqueImages} 张图片。
+  ${conflictGroups > 0 ? `<span style="color:#ef4444;font-weight:800">发现 ${conflictGroups} 组颜色冲突（${conflictCars} 辆车共享图片但名称颜色不同）</span>` : '<span style="color:#22c55e">未发现明显颜色冲突</span>'}
+  <br>请查看下方表格了解详情。颜色提示从车辆名称中自动提取，可能不完全准确。
+`;
+
+// 渲染全部车辆表
+const tbody = document.getElementById('carTable');
+Object.entries(byImage).forEach(([img, group]) => {
+  group.forEach((c, i) => {
+    const hint = extractColorHint(c.name);
+    const isConflict = group.length > 1 && new Set(group.map(x => extractColorHint(x.name)).filter(Boolean)).size > 1;
+    const tr = document.createElement('tr');
+    if (isConflict) tr.className = 'bad-mismatch';
+    tr.innerHTML = `
+      <td>${c.id}</td>
+      <td style="font-weight:700">${c.name}</td>
+      <td>${c.brand}</td>
+      <td><span class="rating-${c.rating}">${c.rating}</span></td>
+      <td style="font-family:monospace;font-size:11px;color:#888">${img}</td>
+      <td class="img-cell">${img ? `<img src="assets/cars/${img}" alt="${c.name}" onerror="this.alt='❌缺失'">` : '—'}</td>
+      <td class="color-hint">${hint || '—'}</td>
+      <td>${
+        isConflict ? '<span class="mismatch-tag tag-conflict">⚠颜色冲突</span>' :
+        group.length > 1 ? `<span class="mismatch-tag tag-shared">共享(${group.length})</span>` :
+        '<span class="mismatch-tag tag-ok">✓ 独占</span>'
+      }</td>
+    `;
+    tbody.appendChild(tr);
+  });
+});
+
+// 渲染冲突表
+const ctBody = document.getElementById('conflictTable');
+conflicts.forEach(({ img, group, colors }) => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="font-family:monospace;font-size:11px">${img}</td>
+    <td>${group.length}</td>
+    <td>${group.map(c => `#${c.id}`).join(', ')}</td>
+    <td>${group.map(c => `${c.name}(${extractColorHint(c.name)||'?'})`).join(' / ')}</td>
+  `;
+  ctBody.appendChild(tr);
+});
+if (conflicts.length === 0) {
+  ctBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#22c55e;padding:20px">✅ 未检测到颜色冲突</td></tr>';
+}
+</script>
+</body>
+</html>

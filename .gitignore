@@ -1,0 +1,16 @@
+# 本地构建工具链 / 临时产物（非源码）
+_build/
+_tapsdk/
+
+# 依赖
+node_modules/
+
+# 操作系统文件
+Thumbs.db
+.DS_Store
+
+# 本地 keystore（不要提交）
+*.keystore
+
+# 单独的 TapTap 制作工具（独立仓库，不纳入构建仓库）
+tapptap-maker

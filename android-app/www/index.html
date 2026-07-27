@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>车行</title>
+<link rel="stylesheet" href="css/style.css?v=20260727aw">
+</head>
+<body>
+<div id="app">
+
+<!-- ==================== A01 加载页 ==================== -->
+<div id="loading" class="screen active">
+  <div class="loading-bg"></div>
+  <div class="loading-text">车行</div>
+  <button class="loading-back" data-action="loading-back">← 返回</button>
+</div>
+
+<!-- ==================== 游戏主容器（A02+） ==================== -->
+<div id="game" class="hidden">
+
+<!-- ====== 顶栏 ====== -->
+<header id="topbar">
+  <div class="top-left">
+    <button class="tb-btn tb-back" data-action="go-back" title="返回">‹</button>
+    <h1 class="tb-title" id="tb-title">首富车行</h1>
+  </div>
+  <button class="tb-btn tb-menu" data-action="open-share" title="分享设置">⋮</button>
+</header>
+
+<!-- ====== 资源条（头像 + 货币） ====== -->
+<div id="resbar">
+  <div class="res-avatar" data-action="open-profile" id="res-avatar">
+    <span class="res-avatar-emoji">👤</span>
+    <img src="" alt="" id="res-avatar-img" hidden>
+  </div>
+  <div class="res-item">
+    <span class="res-ic"><img class="bean-ic" src="assets/gold-bar.png" alt="金"></span>
+    <span class="res-val" id="res-beans">0</span>
+    <button class="res-plus" data-action="open-recharge">+</button>
+  </div>
+  <div class="res-item">
+    <span class="res-ic"><img class="dollar-ic" src="assets/green-bills.png" alt="$"></span>
+    <span class="res-val" id="res-dollars">0</span>
+    <button class="res-plus" data-action="open-exchange">+</button>
+  </div>
+</div>
+
+<!-- ====== 主界面专属视图（车行 A02） ====== -->
+<div id="homeview">
+  <!-- ====== 员工位状态栏 ====== -->
+  <div id="empbar"></div>
+
+  <!-- ====== 信息摘要行（资产/任务/收入） ====== -->
+  <div id="infobar"></div>
+
+  <!-- ====== 功能入口行（欢乐夺宝/首充礼包/名车之旅/七日登陆） ====== -->
+  <div id="featRow" class="feature-row"></div>
+
+  <!-- ====== 主内容区域（可左右滑动：好友车位 | 车位1234 | 车位5678） ====== -->
+  <div id="swiper">
+    <!-- 第0面板：好友专用车位 (A06) -->
+    <div class="swipe-panel" id="friendPanel">
+      <div id="friendParkGrid" class="parking-grid parking-grid-2col"></div>
+    </div>
+    <!-- 第1页面板：车位 1-4 (A02 核心) -->
+    <div class="swipe-panel active" id="panel1">
+      <div id="parkGrid" class="parking-grid parking-grid-2col"></div>
+      <div id="orderLockArea" class="order-lock-area"></div>
+    </div>
+    <!-- 第2页面板：车位 5-8 -->
+    <div class="swipe-panel" id="panel2">
+      <div id="parkGrid2" class="parking-grid parking-grid-2col"></div>
+    </div>
+  </div>
+  <div id="swiperDots" class="swiper-dots">
+    <span class="swiper-dot" data-panel="friendPanel"></span>
+    <span class="swiper-dot active" data-panel="panel1"></span>
+    <span class="swiper-dot" data-panel="panel2"></span>
+  </div>
+</div><!-- /#homeview -->
+
+<!-- ====== 其他屏幕容器（车库/商场/好友/消息/夺宝） ====== -->
+<div id="screen"></div>
+
+<!-- ====== 底部导航 (5 Tab) ====== -->
+<nav id="bottomnav">
+  <button class="nav-btn active" data-screen="home" data-nav="车行">
+    <div class="nav-icon">🚗</div><span>车行</span><span class="nav-dot" id="nav-dot-home"></span>
+  </button>
+  <button class="nav-btn" data-screen="garage" data-nav="车库">
+    <div class="nav-icon">🏠</div><span>车库</span><span class="nav-dot" id="nav-dot-garage"></span>
+  </button>
+  <button class="nav-btn" data-screen="market" data-nav="市场">
+    <div class="nav-icon">🛒</div><span>市场</span><span class="nav-dot" id="nav-dot-market"></span>
+  </button>
+  <button class="nav-btn" data-screen="friends" data-nav="好友">
+    <div class="nav-icon">👥</div><span>好友</span><span class="nav-dot" id="nav-dot-friends"></span>
+  </button>
+  <button class="nav-btn" data-screen="messages" data-nav="消息">
+    <div class="nav-icon">✉️</div><span>消息</span><span class="nav-dot" id="nav-dot-messages"></span>
+  </button>
+</nav>
+
+</div><!-- /#game -->
+
+<!-- ==================== 弹窗层 ==================== -->
+<div id="modal-overlay" class="hidden"></div>
+<div id="modal" class="modal hidden">
+  <div id="modal-body"></div>
+</div>
+
+<!-- ==================== 确认对话框 ==================== -->
+<div id="confirm" class="confirm hidden">
+  <p id="confirm-text"></p>
+  <div class="confirm-btns">
+    <button id="confirm-cancel" class="btn-ghost">取消</button>
+    <button id="confirm-ok" class="btn-primary">确定</button>
+  </div>
+</div>
+
+<!-- ==================== Toast ==================== -->
+<div id="toast" class="toast hidden"></div>
+
+<!-- ==================== 右侧说明抽屉 (A02 资产/收入) ==================== -->
+<div id="drawer-overlay" class="hidden" data-action="close-drawer"></div>
+<div id="drawer" class="drawer hidden">
+  <button class="drawer-close" data-action="close-drawer">×</button>
+  <div id="drawer-body"></div>
+</div>
+
+</div><!-- /#app -->
+
+<script src="game_data.js?v=20260727as"></script>
+<script src="chexing-sdk.js?v=20260727aw"></script>
+<script src="app.js?v=20260727aw"></script>
+</body>
+</html>

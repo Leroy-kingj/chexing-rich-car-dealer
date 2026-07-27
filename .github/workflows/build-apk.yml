@@ -1,0 +1,53 @@
+name: Build Android APK (TapTap)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Grant execute permission for gradlew
+        working-directory: android-app/android
+        run: chmod +x gradlew
+
+      - name: Generate signing keystore (release)
+        working-directory: android-app/android
+        run: |
+          keytool -genkeypair -v \
+            -keystore chexing-release.keystore \
+            -alias chexing \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass chexing123 -keypass chexing123 \
+            -dname "CN=CheXing, OU=Game, O=CheXing, L=CN, S=CN, C=CN"
+          echo "CHEXING_KEYSTORE=$PWD/chexing-release.keystore" >> "$GITHUB_ENV"
+          echo "CHEXING_KEYSTORE_PWD=chexing123" >> "$GITHUB_ENV"
+          echo "CHEXING_KEY_ALIAS=chexing" >> "$GITHUB_ENV"
+          echo "CHEXING_KEY_PWD=chexing123" >> "$GITHUB_ENV"
+
+      - name: Build Release APK
+        working-directory: android-app/android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: android-app/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
