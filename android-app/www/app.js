@@ -1621,11 +1621,12 @@ function refreshParkGrid(){
     }
     if(!sp.unlocked){
       const cost = (D.unlocks.spotCost&&D.unlocks.spotCost[idx]) || (idx+1)*10000;
+      const canAfford = S.dollars >= cost;
       h += `<div class="park-card locked" data-spot="${idx}">
         <div class="pc-lock-wrap">
           <div class="pc-lock-icon">🔒</div>
           <div class="pc-lock-cost">${DOLLAR_IC} ${f(cost)}</div>
-          <button class="park-unlock-btn" data-action="unlock-spot" data-idx="${idx}">点击解锁</button>
+          <button class="park-unlock-btn${canAfford?' can-afford':''}" data-action="unlock-spot" data-idx="${idx}">点击解锁</button>
         </div>
       </div>`;
       continue;
@@ -1653,11 +1654,12 @@ function refreshParkGrid2(){
     }
     if(!sp.unlocked){
       const cost = (D.unlocks.spotCost&&D.unlocks.spotCost[idx]) || (idx+1)*10000;
+      const canAfford = S.dollars >= cost;
       h += `<div class="park-card locked" data-spot="${idx}">
         <div class="pc-lock-wrap">
           <div class="pc-lock-icon">🔒</div>
           <div class="pc-lock-cost">${DOLLAR_IC} ${f(cost)}</div>
-          <button class="park-unlock-btn" data-action="unlock-spot" data-idx="${idx}">点击解锁</button>
+          <button class="park-unlock-btn${canAfford?' can-afford':''}" data-action="unlock-spot" data-idx="${idx}">点击解锁</button>
         </div>
       </div>`;
       continue;
@@ -1772,6 +1774,7 @@ function renderOrderLockArea(){
   // 找一个未解锁的车位
   const lockedIdx = S.spots.findIndex((s,i)=>!s.unlocked);
   const cost = lockedIdx>=0 ? ((D.unlocks.spotCost&&D.unlocks.spotCost[lockedIdx])||(lockedIdx+1)*10000) : 0;
+  const canAfford = lockedIdx>=0 && S.dollars >= cost;
   a.innerHTML = `
     <div class="ol-ad" data-action="open-market">
       <div class="ol-ad-text">P</div>
@@ -1780,7 +1783,7 @@ function renderOrderLockArea(){
     <div class="ol-lock">
       <div class="ol-lock-icon">🔒</div>
       ${lockedIdx>=0?`<div class="ol-lock-price">$${f(cost)}</div>
-        <button class="ol-lock-btn" data-action="unlock-spot" data-idx="${lockedIdx}">解锁车位</div>`
+        <button class="ol-lock-btn${canAfford?' can-afford':''}" data-action="unlock-spot" data-idx="${lockedIdx}">解锁车位</div>`
         :'<div style="font-size:11px;color:var(--mut)">全部已解锁</div>'}
     </div>`;
 }

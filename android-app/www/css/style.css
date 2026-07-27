@@ -335,7 +335,9 @@ input { font-family: inherit; }
 .fts-text { font-size: 18px; font-weight: 800; color: var(--text); line-height: 1.6; }
 .fts-amount { color: var(--green); font-size: 22px; }
 
-.park-unlock-btn { width: 100%; padding: 8px; border-radius: 12px; background: var(--bg2); color: #fff; font-weight: 800; font-size: 12px; margin-top: 4px; cursor: pointer; }
+.park-unlock-btn { width: 100%; padding: 8px; border-radius: 12px; background: var(--bg2); color: #fff; font-weight: 800; font-size: 12px; margin-top: 4px; cursor: pointer; transition: all .2s; }
+.park-unlock-btn.can-afford { background: linear-gradient(135deg, #52b788, #40916c); box-shadow: 0 2px 8px rgba(82,183,136,.4); }
+.park-unlock-btn.can-afford:active { transform: scale(.96); box-shadow: 0 1px 4px rgba(82,183,136,.3); }
 
 /* 订购车锁 + 锁定车位 */
 .order-lock-area { display: none; }
@@ -346,7 +348,8 @@ input { font-family: inherit; }
 .ol-lock { background: var(--panel); border: none; border-radius: 18px; padding: 14px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90px; box-shadow: var(--shadow-sm); }
 .ol-lock-icon { font-size: 26px; color: var(--mut); }
 .ol-lock-price { font-size: 14px; font-weight: 800; color: var(--green); margin-top: 4px; }
-.ol-lock-btn { margin-top: 6px; padding: 5px 14px; border-radius: 12px; background: var(--bg2); color: #fff; font-weight: 800; font-size: 11px; cursor: pointer; }
+.ol-lock-btn { margin-top: 6px; padding: 5px 14px; border-radius: 12px; background: var(--bg2); color: #fff; font-weight: 800; font-size: 11px; cursor: pointer; transition: all .2s; }
+.ol-lock-btn.can-afford { background: linear-gradient(135deg, #52b788, #40916c); box-shadow: 0 2px 8px rgba(82,183,136,.4); }
 
 .friend-parking-link { display: flex; align-items: center; gap: 6px; padding: 10px 12px; color: var(--accent); font-size: 13px; font-weight: 700; cursor: pointer; border-top: 1px solid var(--line); justify-content: center; }
 .friend-parking-link.right-arrow { justify-content: flex-end; }
