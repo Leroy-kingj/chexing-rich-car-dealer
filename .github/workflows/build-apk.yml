@@ -23,6 +23,15 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Capacitor dependencies (restores :capacitor-android module)
+        working-directory: android-app
+        run: npm ci
+
       - name: Grant execute permission for gradlew
         working-directory: android-app/android
         run: chmod +x gradlew
