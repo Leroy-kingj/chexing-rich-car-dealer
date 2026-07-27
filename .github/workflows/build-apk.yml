@@ -54,9 +54,16 @@ jobs:
         working-directory: android-app/android
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
+      - name: Rename APK to qcwhxjq
+        working-directory: android-app/android
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          cp "$APK" "qcwhxjq.apk"
+          echo "APK_FILE=$PWD/qcwhxjq.apk" >> "$GITHUB_ENV"
+
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-apk
-          path: android-app/android/app/build/outputs/apk/release/*.apk
+          name: qcwhxjq
+          path: android-app/android/qcwhxjq.apk
           if-no-files-found: error
