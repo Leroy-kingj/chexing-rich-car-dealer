@@ -179,9 +179,9 @@ input { font-family: inherit; }
 .fc-promo-car { font-size: 40px; margin-left: auto; }
 .fc-promo-label { font-size: 11px; font-weight: 700; color: #b45309; background: rgba(255,255,255,.6); padding: 2px 8px; border-radius: 8px; white-space: nowrap; }
 
-/* ========== 车位卡片（A02 元件11）— 优化5部分展示 ========== */
-.parking-grid { display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; align-items: stretch; gap: 18px; padding: 6px 12px 10px; flex: 1; min-height: 0; }
-.park-card { background: var(--panel); border: none; border-radius: 18px; padding: 10px; position: relative; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow); min-height: 0; }
+/* ========== 车位卡片（A02 元件11）— 统一高度优化 ========== */
+.parking-grid { display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; align-items: stretch; gap: 10px; padding: 6px 12px 8px; flex: 1; min-height: 0; }
+.park-card { background: var(--panel); border: none; border-radius: 16px; padding: 8px 9px; position: relative; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow); height: 212px; }
 .park-card.locked { justify-content: center; align-items: center; border: 2px dashed var(--line); }
 .park-card.locked.clickable { cursor: pointer; }
 
@@ -239,11 +239,11 @@ input { font-family: inherit; }
 .pc-rating-row { display: flex; justify-content: flex-start; margin-bottom: 4px; }
 
 /* 车位中央：车图 + 叠加元素（评级/品牌/状态） */
-.pc-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 115px; position: relative; overflow: hidden; }
+.pc-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; position: relative; overflow: hidden; }
 /* 评级徽章：车图右上角叠加 — 与品牌LOGO右边缘对齐 */
 .pc-body > .pc-rating { position: absolute; top: 0; right: 2px; left: auto; z-index: 4; }
-/* 车图包裹层：relative定位，品牌图标定位基准 */
-.pc-img-wrap { position: relative; display: inline-block; line-height: 0; }
+/* 车图包裹层：relative定位，品牌图标定位基准 — 不裁剪子元素 */
+.pc-img-wrap { position: relative; display: inline-block; line-height: 0; overflow: visible; }
 /* 品牌图标：车图右下角（在 pc-img-wrap 内定位）— 放大1.3倍 */
 .pc-img-wrap .pc-brand-logo,
 .pc-img-wrap > img[alt]:not([alt=""]):not(.pc-car-img) { position: absolute; right: 2px; bottom: 2px; width: 39px; height: 29px; object-fit: contain; z-index: 3; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); pointer-events: none; }
@@ -262,7 +262,7 @@ input { font-family: inherit; }
 .pc-driver-overlay.empty { background: rgba(0,0,0,.35); border: 1.5px dashed rgba(255,255,255,.5); border-radius: 50%; width: 26px; height: 26px; }
 .pc-driver-empty { font-size: 14px; opacity: .7; }
 /* 车名：车图下方居中 —— 允许长车名换行显示 */
-.pc-car-name { font-size: 11px; font-weight: 900; color: var(--sub); margin-top: 2px; text-align: center; line-height: 1.3; word-break: break-all; }
+.pc-car-name { font-size: 11px; font-weight: 900; color: var(--sub); margin-top: 2px; text-align: center; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; padding: 0 4px; }
 /* 强化等级：跟在名字后面内联显示 */
 .pc-enhance { color: var(--gold, #f5a623); font-size: 10px; font-weight: 900; margin-left: 3px; }
 .pc-big-img { max-height: 105px; max-width: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
