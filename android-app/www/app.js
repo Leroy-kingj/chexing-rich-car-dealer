@@ -872,11 +872,12 @@ function openIncome(){
 function updateHUD(){
   $('#res-dollars').textContent = f(S.dollars);
   $('#res-beans').textContent = fbean(S.beans);
-  // 头像：默认使用统一默认头像 👤（img 仅在有真实头像时显示）
+  // 头像：默认使用CSS绘制的默认头像（人形图标），有真实头像时显示图片
   const avi = $('#res-avatar-img');
-  if(avi){
-    if(S.avatar){ avi.src = S.avatar; avi.hidden = false; }
-    else { avi.removeAttribute('src'); avi.hidden = true; }
+  const avatarWrap = $('#res-avatar');
+  if(avi && avatarWrap){
+    if(S.avatar){ avi.src = S.avatar; avi.hidden = false; avatarWrap.classList.add('has-real-avatar'); }
+    else { avi.removeAttribute('src'); avi.hidden = true; avatarWrap.classList.remove('has-real-avatar'); }
   }
   updateInfobar();
   updateEmpbar();
@@ -1095,7 +1096,7 @@ function tick(){
 
   save();
   updateHUD();
-  if(current === 'home'){ refreshParkGrid(); refreshParkGrid2(); refreshFspotGrid(); updateEmpbar(); updateSwipeChevrons(); }
+  if(current === 'home'){ updateParkGridsLite(); updateEmpbar(); updateSwipeChevrons(); }
   if(visiting && S.visitTarget){ renderVisitFspots(); }
 }
 
@@ -1125,9 +1126,19 @@ function go(name){
   closeModal();
 }
 
-/* ==================== A01 加载页 → A02 主界面 ==================== */
-function boot(){
-  $('#loading').classList.remove('active');
+/* ==================== A01 登录页 → A02 主界面 ==================== */
+let gameStarted = false;
+
+/** 从登录页进入主游戏界面 */
+function enterGame(){
+  if(gameStarted) return;
+  gameStarted = true;
+
+  // 隐藏登录页，显示游戏
+  const ld = $('#loading');
+  ld.classList.remove('active');
+  setTimeout(() => { ld.style.display = 'none'; }, 400);
+
   $('#game').classList.remove('hidden');
   $('#game').classList.add('active');
   go('home');
@@ -1136,31 +1147,36 @@ function boot(){
   setInterval(tick, TICK_MS);
   tick();
 
-  // 清理此前由模拟器生成的虚假动态（仅保留真实事件），避免旧存档继续显示假消息
+  // 清理虚假动态
   cleanupFakeMessages();
+}
 
-  // 隐藏加载页
-  setTimeout(() => { $('#loading').style.display='none'; }, 600);
+function boot(){
+  // 登录页已默认显示（#loading active），不需要隐藏
 
-  // 初始化 TapTap SDK（安卓原生环境）
+  // 初始化 TapTap SDK（后台静默初始化，不阻塞登录页）
   if(window.ChexingSDK && window.ChexingSDK.isNative){
     window.ChexingSDK.initAd({ appId: 'taptap', adUnitId: 'reward_video' }).then(r => {
       console.log('[ChexingSDK] Ad initialized:', r);
-      // 预加载广告
       window.ChexingSDK.preloadAd();
     }).catch(e => {
       console.warn('[ChexingSDK] Ad init failed:', e);
     });
-    // 初始化 TapTap 登录 SDK（clientId/clientToken 在 ChexingLoginPlugin 中配置）
     window.ChexingSDK.initLogin().catch(e => {
       console.warn('[ChexingSDK] Login init failed:', e);
     });
-    // 已登录则启动防沉迷合规；并做一次正版校验与更新检测（仅在有更新/盗版时弹窗）
     if(S.taptap){
       ttComplianceStart();
+      // 已有登录态，1.5s后自动进入游戏（用户可看到splash后自动进入）
+      setTimeout(enterGame, 1500);
+    } else {
+      // 未登录，等待用户操作
     }
     window.ChexingSDK.checkLicense().catch(e => console.warn('[ChexingSDK] License check failed:', e));
     window.ChexingSDK.checkUpdate().catch(e => console.warn('[ChexingSDK] Update check failed:', e));
+  } else {
+    // 非原生环境（浏览器调试），显示登录页但允许跳过
+    // 3秒后如果未操作则提示可跳过
   }
 
   // 调试钩子（仅供自动化测试访问内部状态/函数）
@@ -1248,10 +1264,11 @@ function initSwiper(){
     if(!isDragging) return;
     const dx = e.touches[0].clientX - startX;
     const dy = e.touches[0].clientY - startY;
-    // 如果垂直滑动幅度更大，不阻止默认行为
+    // 如果垂直滑动幅度更大，允许页面垂直滚动
     if(Math.abs(dy) > Math.abs(dx) * 1.5) return;
-    // 水平拖动时让浏览器原生滚动处理
-  }, {passive: true});
+    // 水平拖动时阻止默认行为，确保滑动控制权在我们手中
+    e.preventDefault();
+  }, {passive: false});
 
   // 触摸结束 — 吸附到最近页面
   sw.addEventListener('touchend', e => {
@@ -1509,6 +1526,85 @@ function renderParkCard(inst, idx){
   </div>`;
 }
 
+/* ========== 车位网格轻量级更新（避免每秒重建DOM导致抖动） ========== */
+/* 策略：仅当车位结构性状态变化（车辆变更/员工变动/锁定变化）时才重建DOM，
+   平时每秒只更新进度条宽度、倒计时文字、收入数字等数字 —— 与 updateInfobar 签名缓存思路一致 */
+let _parkSig1 = '', _parkSig2 = '', _fspotSig = '';
+
+function _spotSignature(idx){
+  const sp = S.spots[idx];
+  if(!sp) return 'e:'+idx;
+  if(!sp.unlocked) return 'l:'+idx;
+  const inst = instAtSpot(idx);
+  if(!inst) return 'v:'+idx;
+  /* 结构签名：carId + empIid + enhanceLevel + accrued等级(0/非0满仓) */
+  const full = inst.accrued >= capOf(inst) ? 1 : 0;
+  return 'c:'+inst.carId+'|e:'+(inst.empIid||'')+'|h:'+(inst.enhanceLevel||0)+'|f:'+full+'@'+idx;
+}
+
+function updateParkGridsLite(){
+  /* 第1面板：车位1-4 */
+  const sig1 = _spotSignature(0)+'|'+_spotSignature(1)+'|'+_spotSignature(2)+'|'+_spotSignature(3);
+  if(sig1 !== _parkSig1){ _parkSig1 = sig1; refreshParkGrid(); }
+  else { _updateParkNumbers('parkGrid', 0, 4); }
+
+  /* 第2面板：车位5-8 */
+  const sig2 = _spotSignature(4)+'|'+_spotSignature(5)+'|'+_spotSignature(6)+'|'+_spotSignature(7);
+  if(sig2 !== _parkSig2){ _parkSig2 = sig2; refreshParkGrid2(); }
+  else { _updateParkNumbers('parkGrid2', 4, 8); }
+
+  /* 第0面板：好友车位（好友停车状态变化时需要重建） */
+  let fsig = '';
+  const fspots = S.fspots || [];
+  for(let i=0;i<4;i++){ const fs=fspots[i]||{}; fsig += (fs.unlocked?'u':'l')+':'+(fs.parkerUid||'')+(fs.ticketed?'|t':'')+'|'; }
+  if(fsig !== _fspotSig){ _fspotSig = fsig; refreshFspotGrid(); }
+}
+
+/* 仅更新车位卡片中的数字（进度条宽度、收入、倒计时），不重建DOM */
+function _updateParkNumbers(gridId, startIdx, endIdx){
+  const g = $('#'+gridId); if(!g) return;
+  const cards = g.querySelectorAll('.park-card[data-spot]');
+  cards.forEach(card => {
+    const idx = parseInt(card.dataset.spot);
+    if(idx < startIdx || idx >= endIdx) return;
+    const sp = S.spots[idx];
+    if(!sp || !sp.unlocked) return;
+    const inst = instAtSpot(idx);
+    if(!inst) return;
+    const c = CAR_BY_ID[inst.carId];
+    if(!c) return;
+
+    const cap = capOf(inst);
+    const pct = clamp(inst.accrued / cap * 100, 0, 100);
+
+    /* 更新收入数字 */
+    const currEl = card.querySelector('.pc-curr');
+    if(currEl) currEl.textContent = '$' + f(Math.floor(inst.accrued));
+    const capEl = card.querySelector('.pc-cap');
+    if(capEl) capEl.textContent = '$' + f(cap);
+
+    /* 更新进度条宽度 */
+    const fillEl = card.querySelector('.pc-prog-fill');
+    if(fillEl) fillEl.style.width = pct + '%';
+
+    /* 更新收取按钮满仓状态 */
+    const collectBtn = card.querySelector('.pc-collect-inline');
+    if(collectBtn){
+      if(pct >= 100 && !collectBtn.classList.contains('full')) collectBtn.classList.add('full');
+      else if(pct < 100 && collectBtn.classList.contains('full')) collectBtn.classList.remove('full');
+    }
+
+    /* 更新倒计时 */
+    const inc = incomeOf(inst);
+    const remainSec = inc > 0 ? Math.floor((cap - inst.accrued) / inc * 60) : 0;
+    const rmH = String(Math.floor(remainSec / 3600)).padStart(2,'0');
+    const rmM = String(Math.floor((remainSec % 3600) / 60)).padStart(2,'0');
+    const rmS = String(remainSec % 60).padStart(2,'0');
+    const timerVal = card.querySelector('.pc-timer-val');
+    if(timerVal) timerVal.textContent = remainSec > 0 ? (rmH+':'+rmM+':'+rmS) : '已满仓';
+  });
+}
+
 /* ---------- 第1面板：车位1-4 (A02 元件11) — 固定4格 ---------- */
 function refreshParkGrid(){
   const g = $('#parkGrid'); if(!g) return;
@@ -1714,11 +1810,13 @@ function renderProfile(){
   const myBoss = S.friends.find(f => f.uid === S.employedBy);
   openModal(`
     <div class="uip-wrap">
-      <div class="uip-header">
-        <span class="uip-title">${S.name}</span>
-        <button class="uip-rename-btn" data-action="open-rename-modal" title="改名">✏️</button>
-        <button class="uip-close" data-action="close-modal">✕</button>
-      </div>
+        <div class="uip-header">
+          <div class="uip-name-row">
+            <span class="uip-title">${S.name}</span>
+            <button class="uip-rename-btn" data-action="open-rename-modal" title="改名">✏️</button>
+          </div>
+          <button class="uip-close" data-action="close-modal">✕</button>
+        </div>
       <div class="uip-body">
         <div class="uip-top-row">
           <div class="uip-avatar">👤</div>
@@ -1733,20 +1831,7 @@ function renderProfile(){
             <span class="giftcode-entry-txt">礼包码</span>
           </button>
         </div>
-        <div class="uip-uid">UID：${S.uid}</div>
-        <div class="uip-taptap-row ${S.taptap ? 'logged' : ''}">
-          ${S.taptap ? `
-            ${S.taptap.avatar ? `<img class="uip-tt-avatar" src="${S.taptap.avatar}" alt="avatar" onerror="this.style.display='none'">` : `<div class="uip-tt-avatar">👤</div>`}
-            <div class="uip-tt-info">
-              <div class="uip-tt-name">${S.taptap.name || 'TapTap 用户'}</div>
-              <div class="uip-tt-id">TapTap · ${S.taptap.unionid || S.taptap.openid || ''}</div>
-            </div>
-            <button class="uip-tt-logout" data-action="tap-logout">退出</button>
-          ` : `
-            <div class="uip-tt-tip">使用 TapTap 账号登录，跨设备同步进度</div>
-            <button class="uip-tt-login-btn" data-action="tap-login">TapTap 登录</button>
-          `}
-        </div>
+        <div class="uip-uid">UID：${S.uid} ${S.taptap ? '<span class="uip-tt-badge" title="TapTap 已登录">✓</span>' : ''}</div>
         ${(window.ChexingSDK && window.ChexingSDK.isNative) ? `
         <div class="uip-tt-services">
           <div class="uip-tt-services-title">TapTap 服务</div>
@@ -1789,6 +1874,20 @@ function renderProfile(){
 
 /* ==================== TapTap 登录 ==================== */
 /**
+ * 登录页上的 TapTap 登录按钮（显示loading状态）
+ */
+function splashTapLogin(){
+  const btn = $('#login-btn');
+  const loadingEl = $('#login-loading');
+  if(btn) btn.disabled = true;
+  if(loadingEl) loadingEl.classList.remove('hidden');
+  tapLogin().finally(() => {
+    if(loadingEl) loadingEl.classList.add('hidden');
+    if(btn) btn.disabled = false;
+  });
+}
+
+/**
  * 拉起 TapTap 登录，成功后把账号信息写入 S.taptap 并持久化
  */
 async function tapLogin(){
@@ -1813,7 +1912,7 @@ async function tapLogin(){
       save();
       toast('TapTap 登录成功：' + (S.taptap.name || S.taptap.openid));
       ttComplianceStart();   // 登录成功后启动防沉迷合规
-      renderProfile();
+      enterGame();           // 从登录页进入主游戏
     } else {
       const m = (r && r.msg) || '';
       if(m.indexOf('取消') >= 0) toast('已取消登录');
@@ -5017,6 +5116,9 @@ document.addEventListener('click', e => {
     // TapTap 登录
     case 'tap-login': tapLogin(); break;
     case 'tap-logout': tapLogout(); break;
+    // 登录页操作
+    case 'splash-tap-login': splashTapLogin(); break;
+    case 'splash-skip-login': enterGame(); break;
     // TapTap 七大功能模块
     case 'tt-review': ttReview(); break;
     case 'tt-share': ttShareToTapTap(); break;
@@ -5099,8 +5201,8 @@ document.addEventListener('click', e => {
       $$('.msg-tab').forEach(t=>t.classList.toggle('active',t.dataset.msgtab===msgTab));
       break;
 
-    // 加载页返回
-    case 'loading-back': toast('返回顺联动力APP'); break;
+    // 登录页返回（已废弃，保留防错）
+    case 'loading-back': enterGame(); break;
     default: console.log('unknown action:', action);
     }
     return;

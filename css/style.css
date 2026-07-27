@@ -41,11 +41,22 @@ input { font-family: inherit; }
 .screen.active { display: flex; }
 .hidden { display: none !important; }
 
-/* ---------- A01 加载页 ---------- */
-#loading { justify-content: center; align-items: center; position: relative; }
-.loading-bg { position: absolute; inset: 0; background: linear-gradient(135deg,#1a1a2e,#16213e); z-index: 0; }
-.loading-text { position: relative; z-index: 1; color: #fff; font-size: 28px; font-weight: 900; letter-spacing: 6px; text-shadow: 0 2px 10px rgba(0,0,0,.5); }
-.loading-back { position: absolute; top: 16px; left: 16px; z-index: 2; color: rgba(255,255,255,.7); font-size: 18px; padding: 6px 12px; }
+/* ---------- A01 登录/启动页 ---------- */
+#loading { justify-content: center; align-items: center; position: relative; overflow: hidden; }
+.login-bg { position: absolute; inset: 0; z-index: 0; }
+.login-bg img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+.login-content { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; padding: 20px; margin-top: -10vh; }
+.login-title { font-size: 26px; font-weight: 900; color: #ffd66b; text-shadow: 0 2px 12px rgba(0,0,0,.6), 0 0 30px rgba(255,180,50,.3); letter-spacing: 3px; margin-bottom: 6px; }
+.login-subtitle { font-size: 13px; color: rgba(255,255,255,.85); text-shadow: 0 1px 6px rgba(0,0,0,.5); margin-bottom: 36px; letter-spacing: 1px; }
+.login-taptap-btn { display: flex; align-items: center; gap: 8px; background: linear-gradient(135deg,#ff6a3d,#ff4d4d); color: #fff; border: none; border-radius: 24px; padding: 12px 36px; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 16px rgba(255,77,77,.45), 0 0 0 1px rgba(255,255,255,.15) inset; transition: all .2s; letter-spacing: 1px; }
+.login-taptap-btn:active { transform: scale(.96); box-shadow: 0 2px 8px rgba(255,77,77,.35), 0 0 0 1px rgba(255,255,255,.15) inset; }
+.login-btn-icon { font-size: 18px; }
+.login-skip { margin-top: 14px; color: rgba(255,255,255,.5); font-size: 12px; cursor: pointer; padding: 4px 12px; border-radius: 10px; transition: all .15s; }
+.login-skip:active { color: rgba(255,255,255,.8); background: rgba(255,255,255,.08); }
+.login-footer { position: absolute; bottom: 20px; left: 0; right: 0; text-align: center; font-size: 11px; color: rgba(255,255,255,.35); letter-spacing: 1px; z-index: 1; }
+.login-loading { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #fff; font-size: 14px; }
+.login-spinner { width: 32px; height: 32px; border: 3px solid rgba(255,255,255,.25); border-top-color: #ff6a3d; border-radius: 50%; animation: loginSpin .8s linear infinite; }
+@keyframes loginSpin { to { transform: rotate(360deg); } }
 
 /* ---------- #game 主容器 ---------- */
 #game { display: none; flex-direction: column; height: 100%; }
@@ -61,9 +72,15 @@ input { font-family: inherit; }
 
 /* ---------- 资源条 ---------- */
 #resbar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--panel); border-bottom: none; box-shadow: var(--shadow-sm); flex-shrink: 0; }
-.res-avatar { width: 38px; height: 38px; border-radius: 12px; overflow: hidden; position: relative; border: 2px solid var(--accent); flex-shrink: 0; cursor: pointer; background: var(--bg2); }
+.res-avatar { width: 38px; height: 38px; border-radius: 12px; overflow: hidden; position: relative; border: 2px solid var(--accent); flex-shrink: 0; cursor: pointer; background: linear-gradient(135deg, #b7e4c7, #95d5b2); }
 .res-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.res-avatar-emoji { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+/* 默认头像：CSS绘制的用户图标（兼容所有WebView） */
+.res-avatar-emoji { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--accent); }
+/* 无真实头像时显示的默认图标 —— 用CSS伪元素画一个简单人形 */
+.res-avatar::before { content: ''; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); top: 8px; left: 50%; transform: translateX(-50%); opacity: .6; }
+.res-avatar::after { content: ''; position: absolute; width: 18px; height: 10px; border-radius: 10px 10px 0 0; background: var(--accent); bottom: 7px; left: 50%; transform: translateX(-50%); opacity: .6; }
+/* 有真实头像时隐藏CSS默认图标 */
+.res-avatar.has-real-avatar::before, .res-avatar.has-real-avatar::after { display: none; }
 .res-item { display: flex; align-items: center; gap: 3px; background: linear-gradient(135deg,#fefefe,#f8f9fa); border-radius: 20px; padding: 5px 10px 5px 5px; flex: 1; box-shadow: var(--shadow-sm); }
 .res-ic { font-size: 14px; }
 /* 黄金货币统一图标（金元宝） */
@@ -244,8 +261,8 @@ input { font-family: inherit; }
 /* 空座（无驾驶员） */
 .pc-driver-overlay.empty { background: rgba(0,0,0,.35); border: 1.5px dashed rgba(255,255,255,.5); border-radius: 50%; width: 26px; height: 26px; }
 .pc-driver-empty { font-size: 14px; opacity: .7; }
-/* 车名：车图下方居中 */
-.pc-car-name { font-size: 11px; font-weight: 900; color: var(--sub); margin-top: 2px; text-align: center; line-height: 1.2; }
+/* 车名：车图下方居中 —— 允许长车名换行显示 */
+.pc-car-name { font-size: 11px; font-weight: 900; color: var(--sub); margin-top: 2px; text-align: center; line-height: 1.3; word-break: break-all; }
 /* 强化等级：跟在名字后面内联显示 */
 .pc-enhance { color: var(--gold, #f5a623); font-size: 10px; font-weight: 900; margin-left: 3px; }
 .pc-big-img { max-height: 105px; max-width: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
@@ -1113,7 +1130,8 @@ input { font-family: inherit; }
 .uip-wrap { overflow: hidden; max-width: 320px; margin: 0 auto; }
 .uip-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: none; background: var(--bg2); }
 .uip-title { font-size: 14px; font-weight: 900; color: var(--accent-dark); }
-.uip-rename-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; background: rgba(0,0,0,.06); border: 1.5px solid rgba(0,0,0,.12); border-radius: 6px; font-size: 14px; cursor: pointer; padding: 0; margin-left: 6px; opacity: 0.75; transition: all .15s; flex-shrink: 0; }
+.uip-name-row { display: inline-flex; align-items: center; }
+.uip-rename-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: rgba(0,0,0,.06); border: 1.5px solid rgba(0,0,0,.12); border-radius: 6px; font-size: 13px; cursor: pointer; padding: 0; margin-left: 10px; opacity: 0.75; transition: all .15s; flex-shrink: 0; }
 .uip-rename-btn:hover { opacity: 1; transform: scale(1.08); background: rgba(0,0,0,.1); border-color: rgba(0,0,0,.2); }
 .uip-close { background: none; border: none; font-size: 16px; cursor: pointer; padding: 2px 6px; }
 .uip-body { padding: 10px; }
@@ -1154,6 +1172,7 @@ input { font-family: inherit; }
 .rename-confirm-btn { width: 100%; padding: 10px; border-radius: 12px; font-size: 15px; font-weight: 900; }
 .uip-add-btn { margin-left: auto; align-self: flex-start; }
 .uip-uid { font-size: 11px; color: var(--mut); margin-bottom: 8px; padding-left: 4px; }
+.uip-tt-badge { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(135deg,#ff6a3d,#ff4d4d); color: #fff; font-size: 10px; font-weight: 900; margin-left: 4px; vertical-align: middle; }
 .uip-taptap-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 10px; border-radius: 12px; background: linear-gradient(135deg,#fff1f0,#ffe7e3); box-shadow: var(--shadow-sm); }
 .uip-taptap-row.logged { background: linear-gradient(135deg,#e8f3ff,#dbeeff); }
 .uip-tt-avatar { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; background: var(--panel); box-shadow: var(--shadow-sm); flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-size: 18px; }
@@ -1393,7 +1412,7 @@ input { font-family: inherit; }
 .fw-800 { font-weight: 800; } .fs-12 { font-size: 12px; } .fs-14 { font-size: 14px; }
 
 /* ==================== 主界面视图切换 (A02 与其他屏幕) ==================== */
-#homeview { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+#homeview { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 #screen { flex: 1; min-height: 0; display: none; flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 8px; }
 #game.view-home #homeview { display: flex; }
 #game.view-home #screen { display: none; }
@@ -1424,14 +1443,16 @@ input { font-family: inherit; }
 /* ===== 滑动换页提示：左右边缘箭头 + 一次性手势引导 ===== */
 /* 左右边缘半透明箭头：仅在可滑动方向出现，可点击翻页，带呼吸动效 */
 .swipe-chevron {
-  position: absolute; top: 56%; transform: translateY(-50%);
-  width: 38px; height: 38px; border-radius: 50%;
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 40px; height: 40px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,.82); color: var(--accent);
-  box-shadow: 0 2px 10px rgba(0,0,0,.18);
-  z-index: 12; cursor: pointer; user-select: none;
-  border: 1px solid rgba(255,255,255,.6);
+  background: rgba(255,255,255,.92); color: var(--accent);
+  box-shadow: 0 2px 12px rgba(0,0,0,.22);
+  z-index: 50; cursor: pointer; user-select: none;
+  border: 1.5px solid rgba(255,255,255,.7);
   animation: swipe-chevron-pulse 1.6s ease-in-out infinite;
+  /* 确保在 Android WebView 中可点击 */
+  -webkit-tap-highlight-color: rgba(82,183,136,.2);
 }
 .swipe-chevron .chev { font-size: 26px; font-weight: 900; line-height: 1; margin-top: -2px; }
 .swipe-chevron.left  { left: 7px; }

@@ -4,16 +4,28 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>抢车位：华夏崛起</title>
-<link rel="stylesheet" href="css/style.css?v=20260727at">
+<link rel="stylesheet" href="css/style.css?v=20260727au">
 </head>
 <body>
 <div id="app">
 
-<!-- ==================== A01 加载页 ==================== -->
+<!-- ==================== A01 登录/启动页 ==================== -->
 <div id="loading" class="screen active">
-  <div class="loading-bg"></div>
-  <div class="loading-text">车行</div>
-  <button class="loading-back" data-action="loading-back">← 返回</button>
+  <div class="login-bg"><img src="assets/splash_login.jpg" alt="" draggable="false"></div>
+  <div class="login-content">
+    <div class="login-title">抢车位：华夏崛起</div>
+    <div class="login-subtitle">抢占城市车位 建造你的停车帝国</div>
+    <button class="login-taptap-btn" id="login-btn" data-action="splash-tap-login">
+      <span class="login-btn-icon">🎮</span>
+      <span>TapTap 登录</span>
+    </button>
+    <div class="login-skip" data-action="splash-skip-login">跳过登录</div>
+    <div class="login-footer">v1.0.0 · TapTap 独家首发</div>
+  </div>
+  <div class="login-loading hidden" id="login-loading">
+    <div class="login-spinner"></div>
+    <span>正在连接 TapTap...</span>
+  </div>
 </div>
 
 <!-- ==================== 游戏主容器（A02+） ==================== -->
@@ -131,8 +143,8 @@
 
 </div><!-- /#app -->
 
-<script src="game_data.js?v=20260727at"></script>
-<script src="chexing-sdk.js?v=20260727at"></script>
-<script src="app.js?v=20260727at"></script>
+<script src="game_data.js?v=20260727au"></script>
+<script src="chexing-sdk.js?v=20260727au"></script>
+<script src="app.js?v=20260727au"></script>
 </body>
 </html>
