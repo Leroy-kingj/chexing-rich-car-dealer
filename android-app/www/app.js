@@ -1359,9 +1359,9 @@ function updateSwiperDots(){
   updateSwipeChevrons();
 }
 function renderSwipeHints(){
-  const home = $('#homeview');
-  if(!home) return;
-  home.style.position = 'relative';
+  const sw = $('#swiper');
+  if(!sw) return;
+  sw.style.position = 'relative';
 
   // 左边缘箭头：点击去上一页（好友车位）；仅在非首页面板时显示
   if(!document.getElementById('swipeHintLeft')){
@@ -1370,7 +1370,7 @@ function renderSwipeHints(){
     left.className = 'swipe-chevron left';
     left.innerHTML = '<span class="chev">‹</span>';
     left.addEventListener('click', () => snapToPrevPanel());
-    home.appendChild(left);
+    sw.appendChild(left);
   }
   // 右边缘箭头：点击去下一页（更多车位）；仅在非末页面板时显示
   if(!document.getElementById('swipeHintRight')){
@@ -1379,7 +1379,7 @@ function renderSwipeHints(){
     right.className = 'swipe-chevron right';
     right.innerHTML = '<span class="chev">›</span>';
     right.addEventListener('click', () => snapToNextPanel());
-    home.appendChild(right);
+    sw.appendChild(right);
   }
 
   // 一次性手势引导气泡：本次会话首次进入车位页展示，用户滑动或超时后淡出
