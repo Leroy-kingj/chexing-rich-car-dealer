@@ -71,8 +71,8 @@ input { font-family: inherit; }
 .tb-menu { font-size: 22px; }
 
 /* ---------- 资源条 ---------- */
-#resbar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--panel); border-bottom: none; box-shadow: var(--shadow-sm); flex-shrink: 0; }
-.res-avatar { width: 38px; height: 38px; border-radius: 12px; overflow: hidden; position: relative; border: 2px solid var(--accent); flex-shrink: 0; cursor: pointer; background: linear-gradient(135deg, #b7e4c7, #95d5b2); }
+#resbar { display: flex; align-items: center; gap: 5px; padding: 6px 8px; background: var(--panel); border-bottom: none; box-shadow: var(--shadow-sm); flex-shrink: 0; flex-wrap: wrap; }
+.res-avatar { width: 34px; height: 34px; border-radius: 10px; overflow: hidden; position: relative; border: 2px solid var(--accent); flex-shrink: 0; cursor: pointer; background: linear-gradient(135deg, #b7e4c7, #95d5b2); }
 .res-avatar img { width: 100%; height: 100%; object-fit: cover; }
 /* 默认头像：CSS绘制的用户图标（兼容所有WebView） */
 .res-avatar-emoji { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--accent); }
@@ -81,7 +81,7 @@ input { font-family: inherit; }
 .res-avatar::after { content: ''; position: absolute; width: 18px; height: 10px; border-radius: 10px 10px 0 0; background: var(--accent); bottom: 7px; left: 50%; transform: translateX(-50%); opacity: .6; }
 /* 有真实头像时隐藏CSS默认图标 */
 .res-avatar.has-real-avatar::before, .res-avatar.has-real-avatar::after { display: none; }
-.res-item { display: flex; align-items: center; gap: 3px; background: linear-gradient(135deg,#fefefe,#f8f9fa); border-radius: 20px; padding: 5px 10px 5px 5px; flex: 1; box-shadow: var(--shadow-sm); }
+.res-item { display: flex; align-items: center; gap: 3px; background: linear-gradient(135deg,#fefefe,#f8f9fa); border-radius: 18px; padding: 4px 8px 4px 4px; flex: 1; min-width: 0; box-shadow: var(--shadow-sm); }
 .res-ic { font-size: 14px; }
 /* 黄金货币统一图标（金元宝） */
 .bean-ic { width: 1.15em; height: 1.15em; vertical-align: -0.18em; object-fit: contain; display: inline-block; }
@@ -102,8 +102,8 @@ input { font-family: inherit; }
 .fc-stat-icon .dollar-ic    { width: 14px; height: 14px; }            /* 送车属性 */
 .rch-beans .bean-ic { width: 18px; height: 18px; vertical-align: -4px; }
 .rch-gold .bean-ic { width: 13px; height: 13px; vertical-align: -2px; margin-right: 2px; }
-.res-val { font-size: 14px; font-weight: 800; min-width: 44px; color: var(--txt); }
-.res-plus { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 16px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.res-val { font-size: 13px; font-weight: 800; min-width: 36px; color: var(--txt); }
+.res-plus { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 14px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
 /* ---------- 员工位状态栏 (A02 元件5) ---------- */
 #empbar { display: flex; align-items: flex-start; gap: 4px; padding: 6px 10px; background: var(--panel); border-bottom: none; box-shadow: var(--shadow-sm); flex-shrink: 0; overflow-x: auto; }
@@ -137,15 +137,15 @@ input { font-family: inherit; }
 .emp-slot.empty .emp-hire-text { font-size: 10px; font-weight: 800; color: var(--sub); line-height: 1.2; text-align: center; }
 
 /* ---------- 信息摘要行 (A02 元件6-10) ---------- */
-#infobar { display: flex; align-items: center; gap: 4px; padding: 5px 8px; background: var(--panel); border-bottom: none; box-shadow: var(--shadow-sm); flex-shrink: 0; overflow-x: auto; flex-wrap: wrap; }
-.info-chip { display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 16px; font-size: 11px; font-weight: 700; white-space: nowrap; cursor: default; flex-shrink: 0; box-shadow: var(--shadow-sm); position: relative; }
+#infobar { display: flex; align-items: center; gap: 3px; padding: 4px 6px; background: var(--panel); border-bottom: none; box-shadow: var(--shadow-sm); flex-shrink: 0; flex-wrap: wrap; }
+.info-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; border-radius: 14px; font-size: 11px; font-weight: 700; white-space: nowrap; cursor: default; flex-shrink: 0; box-shadow: var(--shadow-sm); position: relative; }
 /* 红点系统：入口右上角红点 */
 .rdot { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; border: 1.5px solid #fff; z-index: 2; }
 .chip-asset { background: linear-gradient(135deg,#fef9e6,#fff5d6); color: #b8860b; }
 .chip-fc { background: linear-gradient(135deg,#ffe8e6,#ffd6d6); color: var(--red); animation: pulse 2s infinite; }
 .chip-quest { background: linear-gradient(135deg,#e0f0ff,#d0e8fd); color: var(--blue); cursor: pointer; }
 .chip-7day { background: linear-gradient(135deg,#fce8f0,#fadce8); color: #db2777; cursor: pointer; }
-.chip-income { background: linear-gradient(135deg,#f0f0f0,#e8e8e8); color: var(--sub); cursor: pointer; margin-left: auto; }
+.chip-income { background: linear-gradient(135deg,#f0f0f0,#e8e8e8); color: var(--sub); cursor: pointer; }
 .chip-gacha { background: linear-gradient(135deg,#fff0f5,#ffe4ec); color: #e91e63; cursor: pointer; }
 .chip-gacha.gacha-pulse { /* 夺宝次数满：静态高亮，不闪烁 */ box-shadow: 0 0 10px rgba(233,30,99,.35); }
 .chip-sevenday { background: linear-gradient(135deg,#e0f8e0,#c8f0c8); color: #2a9d3a; cursor: pointer; }
