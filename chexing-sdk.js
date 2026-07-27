@@ -10,6 +10,7 @@
  * - ChexingSDK.login()        TapTap 登录（返回 openid/unionid/昵称/头像）
  * - ChexingSDK.getAccount()   获取当前已登录账号
  * - ChexingSDK.logout()       退出 TapTap 登录
+ * - ChexingSDK.getInvitedUsers()  查询通过邀请链接真实注册的新用户（邀请奖励依据）
  *
  * TapTap 七大功能模块（ChexingTap 原生插件）：
  * - ChexingSDK.complianceStartup() / complianceExit() / complianceState()  防沉迷合规
@@ -205,6 +206,38 @@ const ChexingSDK = (() => {
     return callPlugin('ChexingLogin', 'logout', {});
   }
 
+  /**
+   * 查询通过当前玩家邀请链接真实下载/注册的新用户列表。
+   * 邀请奖励发放的唯一真实依据 —— 必须由原生端/服务端返回真实数据，前端不得伪造。
+   *
+   * @param {object} [opts]
+   * @param {string} [opts.inviteCode] 邀请者邀请码（缺省由原生端取当前登录账号）
+   * @returns {Promise<{success:boolean, users?:Array<{uid:string, name?:string, registeredAt?:number}>, msg?:string}>}
+   *   成功：{ success:true, users:[...] }  （无真实邀请时 users 为空数组）
+   *   失败/非原生：{ success:false, users:[] }
+   *
+   * 原生端约定插件：ChexingInvite.getInvitedUsers({inviteCode})
+   */
+  async function getInvitedUsers(opts = {}) {
+    if (!isNative) {
+      // 浏览器降级：默认无真实数据（满足"必须由 SDK 返回真实邀请"的要求，绝不伪造）
+      // 网页测试用：URL 带 ?mockInvite=N 时返回 N 个模拟用户，便于联调
+      try {
+        const m = new URLSearchParams(location.search).get('mockInvite');
+        const n = parseInt(m, 10);
+        if (!isNaN(n) && n > 0) {
+          const users = [];
+          for (let i = 1; i <= n; i++) {
+            users.push({ uid: 'mock_' + i, name: '模拟好友' + i, registeredAt: Date.now() });
+          }
+          return { success: true, users };
+        }
+      } catch (e) { /* ignore */ }
+      return { success: true, users: [] };
+    }
+    return callPlugin('ChexingInvite', 'getInvitedUsers', opts);
+  }
+
   // ---- TapTap 七大功能模块（ChexingTap 原生插件） ----
   // 统一封装：浏览器环境自动降级为 toast 提示
   async function tapCall(method, data = {}) {
@@ -259,6 +292,8 @@ const ChexingSDK = (() => {
     login,
     getAccount,
     logout,
+    // 邀请
+    getInvitedUsers,
     // 七大功能模块
     complianceStartup,
     complianceExit,

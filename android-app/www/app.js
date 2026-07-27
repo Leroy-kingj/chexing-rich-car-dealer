@@ -310,7 +310,7 @@ function defaultState(){
     friends,
     tasks:{}, questChapters:{}, seven:{lastDay:0, claimed:[], streak:0},
     stats:{ hired:0, poached:0, workCount:0, shareCount:0, parkFriendCount:0, orderCount:0, ticketCount:0, inviteCount:0, earned:0 },
-    fc:{claimed:false, recharged:false, adsWatched:0, friendsInvited:0}, gacha:{stamina:GACHA_STAMINA_MAX, lastTs:now()},
+    fc:{claimed:false, recharged:false, adsWatched:0, friendsInvited:0, claimedInvites:[]}, gacha:{stamina:GACHA_STAMINA_MAX, lastTs:now()},
     shield: SHIELD_MAX, exch:{count:0, lastDay:''},
     gallery:{}, messages:[], visitTarget:null,
     settings:{},
@@ -333,6 +333,8 @@ function defaultState(){
     lastBotParkDay: '',
     // TapTap 登录态：{ openid, unionid, name, avatar } 或 null
     taptap: null,
+    // 邀请系统：玩家专属邀请码 + 已发放奖励的邀请用户 uid（防重复发奖）
+    inviteCode: null,
   };
 }
 
@@ -452,6 +454,15 @@ function load(){
         });
       }
     }
+    // v11 迁移：邀请奖励改为「必须由 SDK 返回真实注册用户」才发放（去伪）。
+    // 旧版本曾允许点击即 +1（本地伪造计数），此处清零，强制以真实邀请数为准重新核验。
+    if(S.v < 11){
+      S.v = 11;
+      if(S.fc){
+        S.fc.friendsInvited = 0;
+        S.fc.claimedInvites = [];
+      }
+    }
     // 修正：mk 旧逻辑 spotIdx||-1 误把 0 当空，导致默认五菱宏光S等停0号车位的车 spotIdx 变成 -1，
     // 车位面板 instAtSpot(0) 查不到而显示空，但车库按 loc==='spot' 判定为已停。这里一次性修正。
     S.inst.forEach(inst => {
@@ -560,12 +571,18 @@ function load(){
     // 只有自然恢复才会封顶在 GACHA_STAMINA_MAX，所以这里【不再】把超限值收敛回上限。
     // 仅做 NaN/非法值兜底：
     if(S.gacha && (typeof S.gacha.stamina !== 'number' || isNaN(S.gacha.stamina))) S.gacha.stamina = GACHA_STAMINA_MAX;
-    if(!S.fc || typeof S.fc !== 'object') S.fc = { claimed:false, recharged:false, adsWatched:0, friendsInvited:0 };
+    if(!S.fc || typeof S.fc !== 'object') S.fc = { claimed:false, recharged:false, adsWatched:0, friendsInvited:0, claimedInvites:[] };
     else {
       if(typeof S.fc.claimed !== 'boolean') S.fc.claimed = false;
       if(typeof S.fc.recharged !== 'boolean') S.fc.recharged = false;
       if(typeof S.fc.adsWatched !== 'number') S.fc.adsWatched = 0;
       if(typeof S.fc.friendsInvited !== 'number') S.fc.friendsInvited = 0;
+      if(!Array.isArray(S.fc.claimedInvites)) S.fc.claimedInvites = [];
+    }
+    // 邀请码：缺省时基于 uid 生成稳定 6 位码
+    if(!S.inviteCode){
+      const u = String(S.uid || '');
+      S.inviteCode = 'CX' + (u.length >= 6 ? u.slice(-6) : (u + '000000').slice(0,6));
     }
     if(!S.stats || typeof S.stats !== 'object' || S.stats === null) S.stats = { hired:0, poached:0, workCount:0, shareCount:0, parkFriendCount:0, orderCount:0, ticketCount:0, inviteCount:0, earned:0 };
     else {
@@ -1149,6 +1166,9 @@ function enterGame(){
 
   // 清理虚假动态
   cleanupFakeMessages();
+
+  // 进入游戏后静默同步真实邀请奖励（由 SDK 返回真实注册用户才发奖）
+  syncInviteRewards();
 }
 
 function boot(){
@@ -1359,9 +1379,9 @@ function updateSwiperDots(){
   updateSwipeChevrons();
 }
 function renderSwipeHints(){
-  const sw = $('#swiper');
-  if(!sw) return;
-  sw.style.position = 'relative';
+  const home = $('#homeview');
+  if(!home) return;
+  home.style.position = 'relative';
 
   // 左边缘箭头：点击去上一页（好友车位）；仅在非首页面板时显示
   if(!document.getElementById('swipeHintLeft')){
@@ -1370,7 +1390,7 @@ function renderSwipeHints(){
     left.className = 'swipe-chevron left';
     left.innerHTML = '<span class="chev">‹</span>';
     left.addEventListener('click', () => snapToPrevPanel());
-    sw.appendChild(left);
+    home.appendChild(left);
   }
   // 右边缘箭头：点击去下一页（更多车位）；仅在非末页面板时显示
   if(!document.getElementById('swipeHintRight')){
@@ -1379,7 +1399,7 @@ function renderSwipeHints(){
     right.className = 'swipe-chevron right';
     right.innerHTML = '<span class="chev">›</span>';
     right.addEventListener('click', () => snapToNextPanel());
-    sw.appendChild(right);
+    home.appendChild(right);
   }
 
   // 一次性手势引导气泡：本次会话首次进入车位页展示，用户滑动或超时后淡出
@@ -1506,13 +1526,13 @@ function renderParkCard(inst, idx){
   return `<div class="park-card" data-spot="${idx}">
     <!-- 收入进度（含员工头像 + 内联收取按钮） -->
     <div class="pc-income-area">
-      <div class="pc-income-val"><span class="pc-curr">$${f(Math.floor(inst.accrued))}</span><span class="pc-cap">/ $${f(cap)}</span></div>
+      <div class="pc-income-val">${DOLLAR_IC} <span class="pc-curr">${f(Math.floor(inst.accrued))}</span>/<span class="pc-cap">${f(cap)}</span></div>
       <div class="pc-prog-row">${incomeEmpHtml}<div class="pc-prog-bar"><div class="pc-prog-fill" style="width:${pct}%"></div></div><button class="pc-collect-inline${pct>=100?' full':''}" data-action="collect" data-iid="${inst.iid}" title="收取"><img class="pc-collect-bg" src="assets/collect-btn-bg.png" alt=""><img class="pc-collect-icon" src="assets/collect-btn-icon.png" alt=""></button></div>
     </div>
     <!-- 中央：车图（右上评级徽章 + 车图右下角品牌图标 + 左下角工作员工） + 车名（含强化等级内联） -->
     <div class="pc-body">
-      ${ratingBadge(c.rating)}
-      <div class="pc-img-wrap">
+      <div class="pc-img-wrap clickable" data-action="view-parked-car-info" data-car-id="${c.id}" data-iid="${inst.iid}">
+        ${ratingBadge(c.rating)}
         ${carImg(c.id, 140, 90)}
         ${logoImg(c.brand)}
         ${workEmpHtml}
@@ -1558,6 +1578,7 @@ function updateParkGridsLite(){
   const fspots = S.fspots || [];
   for(let i=0;i<4;i++){ const fs=fspots[i]||{}; fsig += (fs.unlocked?'u':'l')+':'+(fs.parkerUid||'')+(fs.ticketed?'|t':'')+'|'; }
   if(fsig !== _fspotSig){ _fspotSig = fsig; refreshFspotGrid(); }
+  else { _updateFspotTimes(); } /* 每秒刷新停留时间 + 按钮状态 */
 }
 
 /* 仅更新车位卡片中的数字（进度条宽度、收入、倒计时），不重建DOM */
@@ -1579,9 +1600,9 @@ function _updateParkNumbers(gridId, startIdx, endIdx){
 
     /* 更新收入数字 */
     const currEl = card.querySelector('.pc-curr');
-    if(currEl) currEl.textContent = '$' + f(Math.floor(inst.accrued));
+    if(currEl) currEl.textContent = f(Math.floor(inst.accrued));
     const capEl = card.querySelector('.pc-cap');
-    if(capEl) capEl.textContent = '$' + f(cap);
+    if(capEl) capEl.textContent = f(cap);
 
     /* 更新进度条宽度 */
     const fillEl = card.querySelector('.pc-prog-fill');
@@ -1602,6 +1623,68 @@ function _updateParkNumbers(gridId, startIdx, endIdx){
     const rmS = String(remainSec % 60).padStart(2,'0');
     const timerVal = card.querySelector('.pc-timer-val');
     if(timerVal) timerVal.textContent = remainSec > 0 ? (rmH+':'+rmM+':'+rmS) : '已满仓';
+  });
+}
+
+/* 仅更新好友车位卡片中的停留时间 + 按钮状态（不重建DOM），每秒调用 */
+function _updateFspotTimes(){
+  const g = $('#friendParkGrid') || $('#fspotGrid'); if(!g) return;
+  const cards = g.querySelectorAll('.park-card[data-fspot]');
+  cards.forEach(card => {
+    const fspotIdx = parseInt(card.dataset.fspot);
+    // 找到停在这个车位的好友
+    const parker = (S.friends || []).find(fr => fr.parkedAtMe === fspotIdx);
+    if(!parker){ return; } /* 空车位或无车，跳过 */
+
+    const fcarId = parker.parkCarId || parker.bestCarId;
+    const pcar = CAR_BY_ID[fcarId];
+    const incPerMin = pcar ? incomeOf({carId: pcar.id}) : 0;
+    const cap = pcar ? (pcar.capacity || 6300) : 6300;
+
+    /* 动态计算停车分钟数 */
+    const parkedMins = parker.parkedAtTs ? Math.floor((now() - parker.parkedAtTs) / 60000)
+                                         : Math.floor((parker.parkAccrued || 0) / (incPerMin || 1));
+    const fullMin = incPerMin > 0 ? Math.floor(cap / incPerMin) : 0;
+    const displayMins = (fullMin > 0 && parkedMins > fullMin) ? fullMin : parkedMins;
+    const h = Math.floor(displayMins / 60);
+    const m = displayMins % 60;
+    const timeStr = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+
+    /* 更新停留时间文本 */
+    const timeEl = card.querySelector('.fspot-park-time');
+    if(timeEl) timeEl.textContent = `停留时间 ${timeStr}`;
+
+    /* 更新按钮状态（30分钟门槛） */
+    const isTicketed = !!parker.ticketed;
+    const canTicket = !isTicketed && parkedMins >= MIN_TICKET_MINUTES;
+    const actionRow = card.querySelector('.fspot-action-row');
+    if(!actionRow) return;
+
+    const oldBtn = actionRow.querySelector('.fspot-ticket-btn, .fspot-ticketed-btn, .fspot-ticket-wait-btn');
+    if(!oldBtn) return;
+
+    /* 仅在按钮状态需要变化时才替换 DOM（避免每秒重建） */
+    const isWaitBtn = oldBtn.classList.contains('fspot-ticket-wait-btn');
+    const isTicketBtn = oldBtn.classList.contains('fspot-ticket-btn');
+    const isTicketedBtn = oldBtn.classList.contains('fspot-ticketed-btn');
+
+    if(isTicketed && !isTicketedBtn){
+      /* 应该变成已贴单 */
+      oldBtn.outerHTML = `<button class="btn-ghost btn-sm fspot-ticketed-btn" disabled>已贴单</button>`;
+    } else if(canTicket && !isTicketBtn){
+      /* 可以开罚单 */
+      oldBtn.outerHTML = `<button class="btn-primary btn-sm fspot-ticket-btn" data-action="ticket-friend" data-friend-uid="${parker.uid}" data-fspot="${fspotIdx}">开罚单</button>`;
+    } else if(!canTicket && !isTicketed && !isWaitBtn){
+      /* 倒计时中：显示剩余时间 */
+      const remainSec = Math.max(0, (MIN_TICKET_MINUTES - parkedMins) * 60);
+      const rm = Math.ceil(remainSec / 60); const rs = remainSec % 60;
+      oldBtn.outerHTML = `<button class="btn-ghost btn-sm fspot-ticket-wait-btn" disabled>${rm}:${String(rs).padStart(2,'0')}</button>`;
+    } else if(isWaitBtn && !isTicketed && !canTicket){
+      /* 更新倒计时数字 */
+      const remainSec = Math.max(0, (MIN_TICKET_MINUTES - parkedMins) * 60);
+      const rm = Math.ceil(remainSec / 60); const rs = remainSec % 60;
+      oldBtn.textContent = `${rm}:${String(rs).padStart(2,'0')}`;
+    }
   });
 }
 
@@ -2084,28 +2167,92 @@ function redeemGiftCode(){
  * @param {object} opts 可选分享参数
  */
 async function shareGame(opts = {}){
+  const code = ensureInviteCode();
+  const baseUrl = opts.url || 'https://www.taptap.cn/app/抢车位：华夏崛起'; // TODO: 替换为实际 TapTap 游戏链接
+  // 邀请链接带邀请码，用于追踪真实注册的新用户
+  const sep = baseUrl.indexOf('?') >= 0 ? '&' : '?';
+  const inviteUrl = `${baseUrl}${sep}inviter=${encodeURIComponent(code)}`;
   const defaultOpts = {
     title: '抢车位：华夏崛起 - 我的车库帝国',
-    text: `我在《抢车位：华夏崛起》拥有 ${S.inst.length} 辆车，总资产 ${f(S.dollars)} 刀乐！快来挑战我吧！`,
-    url: 'https://www.taptap.cn/app/抢车位：华夏崛起', // TODO: 替换为实际 TapTap 游戏链接
+    text: `我在《抢车位：华夏崛起》拥有 ${S.inst.length} 辆车，总资产 ${f(S.dollars)} 刀乐！快来挑战我吧！邀请码：${code}`,
+    url: inviteUrl,
   };
   const finalOpts = { ...defaultOpts, ...opts };
+  if(!opts.url) finalOpts.url = inviteUrl; // 防止 opts.url 覆盖掉邀请码
 
   if(window.ChexingSDK){
     const result = await window.ChexingSDK.share(finalOpts);
     if(result.success){
       toast('分享成功！');
-      // 可选：分享成功奖励（如增加邀请进度等）
+      // 分享成功后同步真实邀请数据（由 SDK 返回真实注册用户才发奖）
+      syncInviteRewards();
     }
   } else {
     // 浏览器降级：复制文案到剪贴板
     try {
       await navigator.clipboard.writeText(finalOpts.text + '\n' + (finalOpts.url || ''));
       toast('分享内容已复制到剪贴板');
+      syncInviteRewards();
     } catch(e) {
       toast('分享功能暂不可用');
     }
   }
+}
+
+/* ===== 邀请奖励（依赖 SDK 返回的真实邀请数据） ===== */
+/**
+ * 确保玩家有邀请码（基于 uid 稳定生成，仅首次写入）
+ */
+function ensureInviteCode(){
+  if(!S.inviteCode){
+    const u = String(S.uid || '');
+    S.inviteCode = 'CX' + (u.length >= 6 ? u.slice(-6) : (u + '000000').slice(0,6));
+    save();
+  }
+  return S.inviteCode;
+}
+
+/**
+ * 从 SDK 同步真实邀请数据，并为"通过邀请链接真实注册"的新用户发放黄金奖励。
+ * 完全依赖 ChexingSDK.getInvitedUsers() 的返回，绝不本地伪造。
+ *
+ * 规则：
+ *  - 仅对 SDK 返回、且尚未发放过奖励的 uid 发奖（每用户 10000 黄金）
+ *  - 已发放过的 uid 记录在 S.fc.claimedInvites，不重复发奖
+ *  - S.fc.friendsInvited 以 SDK 返回的真实邀请数为准（取最大值，兼容往期本地计数）
+ *
+ * @returns {Promise<{ok:boolean, newCount:number, gold:number}>}
+ */
+async function syncInviteRewards(){
+  ensureInviteCode();
+  if(!window.ChexingSDK){
+    toast('邀请功能暂不可用');
+    return { ok:false, newCount:0, gold:0 };
+  }
+  let r;
+  try {
+    r = await window.ChexingSDK.getInvitedUsers({ inviteCode: S.inviteCode });
+  } catch(e){
+    console.warn('[invite] getInvitedUsers error:', e);
+    return { ok:false, newCount:0, gold:0 };
+  }
+  const users = (r && r.success && Array.isArray(r.users)) ? r.users : [];
+  // 以 SDK 真实邀请数为准
+  if(users.length > (S.fc.friendsInvited||0)) S.fc.friendsInvited = users.length;
+  // 找出尚未发奖的真实新用户
+  const claimed = S.fc.claimedInvites || (S.fc.claimedInvites = []);
+  const newOnes = users.filter(u => u && u.uid && !claimed.includes(u.uid));
+  if(newOnes.length){
+    const gold = newOnes.length * 10000;
+    S.beans += gold;
+    newOnes.forEach(u => claimed.push(u.uid));
+    S.stats.inviteCount = (S.stats.inviteCount||0) + newOnes.length;
+    save();
+    updateHUD(); updateInfobar();
+    toast(`🎉 邀请成功 ${newOnes.length} 位新用户，获得 ${fbean(gold)} 黄金！`);
+    return { ok:true, newCount:newOnes.length, gold };
+  }
+  return { ok:true, newCount:0, gold:0 };
 }
 
 /* ===== 改名系统 ===== */
@@ -2235,8 +2382,16 @@ function resetRchAdsDaily(){
   const tod = todayStr();
   if(S.rchAds.lastDay !== tod){
     S.rchAds.lastDay = tod;
-    S.rchAds.watched = [0,0,0,0];
-    S.rchAds.claimed = [false,false,false,false];
+    // 规范：自然日仅重置【已领奖】的档位；
+    // 未领奖但观看进度未满的档位保留 watched 进度，不随自然日清零。
+    if(!Array.isArray(S.rchAds.watched)) S.rchAds.watched = [0,0,0,0];
+    if(!Array.isArray(S.rchAds.claimed)) S.rchAds.claimed = [false,false,false,false];
+    for(let i=0;i<S.rchAds.watched.length;i++){
+      if(S.rchAds.claimed[i]){
+        S.rchAds.watched[i] = 0;
+        S.rchAds.claimed[i] = false;
+      }
+    }
     save();
   }
 }
@@ -2378,7 +2533,7 @@ function renderEmployeeInfo(eidx){
           <div class="emp-panel-name">${emp.name}</div>
         </div>
         <div class="emp-panel-stats">
-          <div class="emp-stat-row"><span class="emp-stat-icon">¥</span><span class="emp-stat-label">身价:</span><span class="emp-stat-val">${f(emp.networth)}</span></div>
+          <div class="emp-stat-row"><span class="emp-stat-icon">🏆</span><span class="emp-stat-label">身价:</span><span class="emp-stat-val">${f(emp.networth)}</span></div>
           <div class="emp-stat-row"><span class="emp-stat-icon">${BEAN_IC}</span><span class="emp-stat-label">加成:</span><span class="emp-stat-val">${(emp.bonus*100).toFixed(0)}%</span></div>
         </div>
       </div>
@@ -2756,17 +2911,19 @@ function renderHireFriend(mode='hire'){
     const isBusy = mode === 'poach' && isFriendWorking(fr);
 
     listHtml += `<div class="friend-hire-row">
-      <div class="fhr-avatar">${fr.avatar?`<img src="${fr.avatar}" alt="">`:'<span class="fhr-avatar-placeholder"></span>'}</div>
+      <div class="fhr-avatar">${fr.avatar?`<img src="${fr.avatar}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><span class="fhr-avatar-ph" style="display:none">${DEF_AVA}</span>`:`<span class="fhr-avatar-ph">${DEF_AVA}</span>`}</div>
       <div class="fhr-car-wrap">
         <div class="fhr-car-img-wrap">
           ${carImg(fr.bestCarId,70,40)}
           <span class="fhr-rating">${ratingBadge(c.rating)}</span>
         </div>
-        <span class="fhr-name">${fr.name}</span>
-        <div class="fhr-networth"><span class="fhr-nw-icon">🏆</span> ${f(fr.networth)}</div>
+        <div class="fhr-info-col">
+          <span class="fhr-name">${fr.name}</span>
+          <div class="fhr-networth"><span class="fhr-nw-icon">🏆</span> ${f(fr.networth)}</div>
+        </div>
       </div>
       <div class="fhr-action">
-        ${isBusy ? '<span class="fhr-busy-tag">忙碌中</span>' : `<div class="fhr-cost">💰 ${f(cost)}</div>`}
+        ${isBusy ? '<span class="fhr-busy-tag">忙碌中</span>' : `<div class="fhr-cost">${DOLLAR_IC} ${f(cost)}</div>`}
         <button class="emp-action-btn ${isBusy?'btn-disabled':''}" data-action="${isBusy?'do-poach-busy':'do-hire'}" data-fruid="${fr.uid}" data-cost="${cost}" data-mode="${mode}">${mode==='hire'?'雇佣':'挖角'}</button>
       </div>
     </div>`;
@@ -2847,7 +3004,10 @@ function doHire(fruid, cost, mode){
 }
 
 /* ==================== A10 首充界面 ==================== */
-function renderFirstCharge(){
+async function renderFirstCharge(){
+  // 打开时先从 SDK 拉取真实邀请数据（奖励发放的唯一依据）
+  try { await syncInviteRewards(); } catch(e){ /* 忽略同步异常，使用本地已有数据 */ }
+
   const claimed = S.fc.claimed;
   const FC_ADS_NEED = 5;
   const FC_INVITE_NEED = 5;
@@ -2859,6 +3019,7 @@ function renderFirstCharge(){
   const giftCar = CAR_BY_ID[21]; // 宝马I8质子红
   const fcData = D.firstCharge || {};
   const rewards = fcData.rewards || [];
+  const myCode = ensureInviteCode();
 
   openModal(`
     <div class="fc-modal">
@@ -2913,10 +3074,11 @@ function renderFirstCharge(){
           <button class="fc-btn ${inviteFull?'fc-btn-done':'btn-primary'}" data-action="fc-invite" ${inviteFull?'disabled':''}>
             邀请好友
           </button>
-          <div class="fc-btn-count">已邀请：${inviteDone}/${FC_INVITE_NEED}</div>
+          <div class="fc-btn-count">已真实邀请：${inviteDone}/${FC_INVITE_NEED}（需好友通过链接注册）</div>
         </div>
         `}
       </div>
+      <div class="fc-invite-code">我的邀请码：<b>${myCode}</b> <button class="fc-refresh-btn" data-action="refresh-invite">刷新进度</button></div>
       ${claimed ? `<button class="fc-claim-btn fc-claimed-btn" disabled>已领取</button>` : canClaim ? `<button class="fc-claim-btn btn-primary" data-action="claim-fc">领取</button>` : ''}
     </div>
   `);
@@ -4145,15 +4307,15 @@ function renderVisitFspots(){
       const rm = remainSec > 0 ? `${rmH}:${rmM}:${rmS}` : '已满仓';
       h += `<div class="park-card" data-vfspot="${i}">
         <div class="pc-income-area">
-          <div class="pc-income-val"><span class="pc-curr">$${f(Math.floor(earned))}</span><span class="pc-cap">/ $${f(cap)}</span></div>
+          <div class="pc-income-val">${DOLLAR_IC} <span class="pc-curr">${f(Math.floor(earned))}</span>/<span class="pc-cap">${f(cap)}</span></div>
           <div class="pc-prog-row"><div class="pc-prog-bar"><div class="pc-prog-fill" style="width:${pct}%"></div></div><div class="vf-parked-btns" style="display:flex;gap:4px;margin-left:auto;flex-shrink:0;">
             <button class="btn-primary btn-sm" data-action="collect" data-iid="${parkedCar.iid}" title="收取收益">🤚 收取</button>
             <button class="btn-primary btn-sm" data-action="recall-from-friend" data-iid="${parkedCar.iid}" title="取回车辆">⟲ 取回</button>
           </div></div>
         </div>
         <div class="pc-body">
-          ${ratingBadge(c.rating)}
-          <div class="pc-img-wrap">
+          <div class="pc-img-wrap clickable" data-action="view-parked-car-info" data-car-id="${c.id}" data-iid="${parkedCar.iid}">
+            ${ratingBadge(c.rating)}
             ${carImg(c.id, 140, 90)}
             ${logoImg(c.brand)}
           </div>
@@ -4255,7 +4417,7 @@ function renderParkAtFriendModal(fspotIdx){
       </div>
       <div class="vfpr-right">
         <div class="vfpr-info">⏱ 时间：${timeStr}</div>
-        <div class="vfpr-info">💰 收入：${f(inc)}/分钟</div>
+        <div class="vfpr-info">${DOLLAR_IC} 收入：${f(inc)}/分钟</div>
         <div class="vfpr-info">📦 容量：${f(cap)}</div>
         <button class="vfpr-btn${lockCls}">停车</button>
       </div>
@@ -4660,71 +4822,86 @@ let gachaSpinning = false;
 function gachaSpin(){
   if(gachaSpinning){ toast('正在转动中...'); return; }
   if(S.gacha.stamina <= 0){ toast('今日广告次数已用完，请等待恢复'); return; }
-  S.gacha.stamina--;
-  S.gacha.lastTs = now();
-  gachaSpinning = true;
 
-  // 按权重随机选择奖励
-  const totalW = GACHA_TOTAL_WEIGHT;
-  let roll = Math.random() * totalW;
-  let selectedIdx = 0;
-  for(let i=0; i<GACHA_REWARDS.length; i++){
-    roll -= GACHA_REWARDS[i].weight;
-    if(roll <= 0){ selectedIdx = i; break; }
-  }
-  const selected = GACHA_REWARDS[selectedIdx];
+  // 调用原生激励视频广告，成功后才扣除次数并转盘（浏览器环境无SDK自动降级）
+  const doSpin = () => {
+    S.gacha.stamina--;
+    S.gacha.lastTs = now();
+    gachaSpinning = true;
 
-  // 计算目标角度（扇区中心）
-  const ap = gachaAnglePerReward[selectedIdx];
-  const targetAngle = (ap.start + ap.end) / 2;
-  // 总旋转角度 = 基础圈数(5-8圈) + 目标偏移
-  // conic-gradient从0deg(顶部)顺时针增长，指针在顶部(12点方向)
-  // 要让目标扇区转到顶部，需逆时针旋转targetAngle度
-  const extraSpins = 5 + Math.floor(Math.random() * 4); // 5-8圈
-  const finalAngle = extraSpins * 360 + targetAngle;
+    // 按权重随机选择奖励
+    const totalW = GACHA_TOTAL_WEIGHT;
+    let roll = Math.random() * totalW;
+    let selectedIdx = 0;
+    for(let i=0; i<GACHA_REWARDS.length; i++){
+      roll -= GACHA_REWARDS[i].weight;
+      if(roll <= 0){ selectedIdx = i; break; }
+    }
+    const selected = GACHA_REWARDS[selectedIdx];
 
-  // 应用旋转动画
-  const wheel = $('#gwheel');
-  if(wheel){
-    wheel.style.transition = 'transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
-    wheel.style.transform = `rotate(${-finalAngle}deg)`;
-  }
+    // 计算目标角度（扇区中心）
+    const ap = gachaAnglePerReward[selectedIdx];
+    const targetAngle = (ap.start + ap.end) / 2;
+    // 总旋转角度 = 基础圈数(5-8圈) + 目标偏移
+    // conic-gradient从0deg(顶部)顺时针增长，指针在顶部(12点方向)
+    // 要让目标扇区转到顶部，需逆时针旋转targetAngle度
+    const extraSpins = 5 + Math.floor(Math.random() * 4); // 5-8圈
+    const finalAngle = extraSpins * 360 + targetAngle;
 
-  // 动画结束后结算
-  setTimeout(()=>{
-    gachaSpinning = false;
-    if(wheel) wheel.style.transition = '';
-
-    // 结算奖励
-    let msg = '';
-    if(selected.type === 'dollars'){
-      S.dollars += selected.val; msg = `🎉 ${selected.label}！获得 ${f(selected.val)} 刀乐`;
-    } else if(selected.type === 'stamina'){
-      gainGachaStamina(selected.val + 1); // +1 抵消本次 spin 消耗的 1 次，确保"3次夺宝"实际净得+3
-      msg = `🎡 ${selected.label}！获得 +${selected.val} 次夺宝`;
-    } else if(selected.type === 'fee' || selected.type === 'plunder'){
-      // 收费/掠夺：跳转到目标场景（好友车行样式+遮罩+操作按钮）
-      const target = pickGachaTarget();
-      const mode = selected.type; // 'fee' | 'plunder'
-      _gachaEnterFrom = 'spin';
-      // 先渲染目标场景，渲染成功后再关闭夺宝弹窗。
-      // 这样即使渲染异常也不会出现"弹窗已关却回到主界面"的尴尬。
-      try {
-        renderGachaTargetScene(mode, target);
-        closeModal(); // 关闭夺宝弹窗
-      } catch(err){
-        console.error('[gacha] 目标场景渲染失败，回退到夺宝弹窗：', err);
-        closeModal();
-        renderGacha(); // 渲染失败时回到夺宝，而不是主界面
-      }
-      return; // 跳过后续的result显示和save
+    // 应用旋转动画
+    const wheel = $('#gwheel');
+    if(wheel){
+      wheel.style.transition = 'transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
+      wheel.style.transform = `rotate(${-finalAngle}deg)`;
     }
 
-    const res = $('#gresult');
-    if(res) res.innerHTML = `<span style="color:var(--accent);font-weight:900">${msg}</span>`;
+    // 动画结束后结算
+    setTimeout(()=>{
+      gachaSpinning = false;
+      if(wheel) wheel.style.transition = '';
 
-    save(); updateHUD(); updateStamina();
-  }, 4200);
+      // 结算奖励
+      let msg = '';
+      if(selected.type === 'dollars'){
+        S.dollars += selected.val; msg = `🎉 ${selected.label}！获得 ${f(selected.val)} 刀乐`;
+      } else if(selected.type === 'stamina'){
+        gainGachaStamina(selected.val + 1); // +1 抵消本次 spin 消耗的 1 次，确保"3次夺宝"实际净得+3
+        msg = `🎡 ${selected.label}！获得 +${selected.val} 次夺宝`;
+      } else if(selected.type === 'fee' || selected.type === 'plunder'){
+        // 收费/掠夺：跳转到目标场景（好友车行样式+遮罩+操作按钮）
+        const target = pickGachaTarget();
+        const mode = selected.type; // 'fee' | 'plunder'
+        _gachaEnterFrom = 'spin';
+        // 先渲染目标场景，渲染成功后再关闭夺宝弹窗。
+        // 这样即使渲染异常也不会出现"弹窗已关却回到主界面"的尴尬。
+        try {
+          renderGachaTargetScene(mode, target);
+          closeModal(); // 关闭夺宝弹窗
+        } catch(err){
+          console.error('[gacha] 目标场景渲染失败，回退到夺宝弹窗：', err);
+          closeModal();
+          renderGacha(); // 渲染失败时回到夺宝，而不是主界面
+        }
+        return; // 跳过后续的result显示和save
+      }
+
+      const res = $('#gresult');
+      if(res) res.innerHTML = `<span style="color:var(--accent);font-weight:900">${msg}</span>`;
+
+      save(); updateHUD(); updateStamina();
+    }, 4200);
+  };
+
+  if(window.ChexingSDK){
+    toast('正在加载广告...');
+    gachaSpinning = true; // 锁定，防止广告加载期间重复点击
+    window.ChexingSDK.showRewardAd().then(result => {
+      if(result && result.success){ doSpin(); }
+      else { gachaSpinning = false; toast('广告还在准备中，请稍后再试'); }
+    }).catch(() => { gachaSpinning = false; toast('广告加载失败，请稍后重试'); });
+  } else {
+    doSpin();
+  }
 }
 /** 从好友列表入口进入收费/掠夺目标场景：跳转到对方家界面，而非弹窗内直接结算 */
 function openGachaTargetFromFriend(targetUid, mode){
@@ -4872,7 +5049,7 @@ function renderGachaTargetCars(target){
     const pct = Math.min(100, (earned/cap)*100);
     h += `<div class="park-card">
       <div class="pc-income-area">
-        <div class="pc-income-val"><span class="pc-curr">$${f(earned)}</span></div>
+        <div class="pc-income-val"><span class="pc-curr">${DOLLAR_IC}${f(earned)}</span></div>
         <div class="pc-prog-bar"><div class="pc-prog-fill" style="width:${pct}%"></div></div>
       </div>
       <div class="pc-body">
@@ -5096,16 +5273,42 @@ document.addEventListener('click', e => {
     // 首充/任务/七日
     case 'claim-fc': claimFC(); break;
     case 'fc-watch-ad':
-      if(S.fc.adsWatched >= 5){ toast('今日观看次数已用完'); return; }
-      S.fc.adsWatched = (S.fc.adsWatched||0) + 1;
-      toast('📺 观看广告完成！('+S.fc.adsWatched+'/5)');
-      save(); renderFirstCharge();
+      if((S.fc.adsWatched||0) >= 5){ toast('今日观看次数已用完'); return; }
+      if(window.ChexingSDK){
+        toast('正在加载广告...');
+        window.ChexingSDK.showRewardAd().then(result => {
+          if(result && result.success){
+            S.fc.adsWatched = (S.fc.adsWatched||0) + 1;
+            toast('📺 观看广告完成！('+S.fc.adsWatched+'/5)');
+            save(); renderFirstCharge();
+          } else {
+            toast('广告还在准备中，请稍后再试');
+          }
+        }).catch(() => { toast('广告加载失败，请稍后重试'); });
+      } else {
+        S.fc.adsWatched = (S.fc.adsWatched||0) + 1;
+        toast('📺 观看广告完成！('+S.fc.adsWatched+'/5)');
+        save(); renderFirstCharge();
+      }
       break;
     case 'fc-invite':
-      if(S.fc.friendsInvited >= 5){ toast('邀请次数已用完'); return; }
-      S.fc.friendsInvited = (S.fc.friendsInvited||0) + 1;
-      toast('🎉 邀请成功！('+S.fc.friendsInvited+'/5)');
-      save(); renderFirstCharge();
+      if((S.fc.friendsInvited||0) >= 5){ toast('邀请名额已满（5/5）'); return; }
+      // 分享邀请链接（带邀请码），奖励须由 SDK 返回真实注册用户后发放
+      toast('正在打开分享...');
+      shareGame({ text: `【我的邀请码 ${ensureInviteCode()}】我在《抢车位：华夏崛起》停车赚钱，快来一起玩！` });
+      renderFirstCharge(); // 内部会先从 SDK 同步真实邀请数据再渲染
+      break;
+    case 'refresh-invite':
+      // 手动刷新邀请进度（从 SDK 拉取真实注册用户）
+      syncInviteRewards().then(res => {
+        if(res.ok){
+          if(res.newCount > 0) toast(`已领取 ${res.newCount} 位新用户的邀请奖励！`);
+          else toast('已刷新：暂无新的好友通过邀请链接注册');
+        } else {
+          toast('邀请数据同步失败，请稍后重试');
+        }
+        renderFirstCharge();
+      });
       break;
     case 'claim-seven': claimSevenDay(parseInt(el.dataset.day)); break;
     case 'reset-seven': resetSevenDay(); break;
@@ -5120,6 +5323,13 @@ document.addEventListener('click', e => {
       const iid = parseInt(el.dataset.iid);
       const inst = S.inst.find(i=>i.iid===iid);
       if(inst) showCarInfo(inst.carId, inst);
+      break;
+    }
+    case 'view-parked-car-info': {
+      const carId = parseInt(el.dataset.carId);
+      const iid = parseInt(el.dataset.iid);
+      const inst = S.inst.find(i=>i.iid===iid);
+      showCarInfo(carId, inst);
       break;
     }
 
@@ -5206,14 +5416,18 @@ document.addEventListener('click', e => {
       lotteryDraw(parseInt(el.dataset.cid));
       break;
 
-    // 分享
+    // 分享（分享面板各渠道）
     case 'share-wx-moments': case 'share-wx-friends': case 'share-weibo': case 'share-qq':
-      S.stats.shareCount++; S.stats.inviteCount++;
-      S.beans += 10000;  // 每邀请一个新用户奖励1万黄金
-      save();
-      toast('分享成功！已邀请好友，获得10000黄金（演示）');
+      S.stats.shareCount++;
       closeModal();
-      updateHUD(); updateNavDots(); updateInfobar();
+      // 分享本身不直接发邀请奖励；真实奖励须由 SDK 返回通过邀请链接注册的新用户后发放
+      shareGame({ text: `【我的邀请码 ${ensureInviteCode()}】我在《抢车位：华夏崛起》停车赚钱，快来一起玩！` });
+      syncInviteRewards().then(res => {
+        if(res.ok && res.newCount === 0){
+          toast('已分享！需有好友通过你的邀请链接下载注册后，才能获得黄金奖励');
+        }
+      });
+      updateNavDots();
       if(_shareReturnQuests){ _shareReturnQuests = false; renderQuests(); }
       break;
     case 'share-result': renderShare(); break;
@@ -5284,7 +5498,7 @@ function collectInst(iid){
       const fill = card.querySelector('.pc-prog-fill');
       if(fill) fill.style.width = '0%';
       const curr = card.querySelector('.pc-curr');
-      if(curr) curr.textContent = '$0';
+      if(curr) curr.textContent = '0';
     });
   });
 }

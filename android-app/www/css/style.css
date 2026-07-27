@@ -36,6 +36,15 @@ input { font-family: inherit; }
 
 #app { height: 100%; display: flex; flex-direction: column; }
 
+/* ---------- 竖屏锁定（CSS层防护） ---------- */
+@supports (orientation: landscape) {
+  @media (orientation: landscape) {
+    html { transform: rotate(0deg) !important; transform-origin: center; }
+    body { max-width: 100vw !important; overflow-x: hidden !important; }
+    #screen, #homeview, #app { max-width: 100vw !important; }
+  }
+}
+
 /* ---------- screen ---------- */
 .screen { display: none; height: 100%; flex-direction: column; }
 .screen.active { display: flex; }
@@ -181,7 +190,7 @@ input { font-family: inherit; }
 
 /* ========== 车位卡片（A02 元件11）— 统一高度优化 ========== */
 .parking-grid { display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; align-items: stretch; gap: 10px; padding: 6px 12px 8px; flex: 1; min-height: 0; }
-.park-card { background: var(--panel); border: none; border-radius: 16px; padding: 8px 9px; position: relative; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow); height: 212px; }
+.park-card { background: var(--panel); border: none; border-radius: 16px; padding: 6px 8px; position: relative; overflow: visible; display: flex; flex-direction: column; box-shadow: var(--shadow); min-height: 190px; }
 .park-card.locked { justify-content: center; align-items: center; border: 2px dashed var(--line); }
 .park-card.locked.clickable { cursor: pointer; }
 
@@ -212,7 +221,7 @@ input { font-family: inherit; }
 /* 员工头像+名称纵向容器 */
 .pc-emp-area { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; }
 .pc-emp-name { font-size: 10px; font-weight: 700; color: var(--sub); white-space: nowrap; line-height: 1.1; max-width: 36px; overflow: hidden; text-overflow: ellipsis; text-align: center; }
-.pc-income-area { flex: 1; min-width: 0; }
+.pc-income-area { flex: 0 0 auto; min-width: 0; }
 /* 收入进度条左侧：员工头像+名称（与顶部员工栏风格一致） */
 /* 收入进度区员工头像（使用renderEmpAvatar渲染，直接内联样式） */
 .pc-income-emp-wrap { display: flex; align-items: center; gap: 4px; flex-shrink: 0; cursor: pointer; position: relative; transition: transform .15s; }
@@ -224,7 +233,7 @@ input { font-family: inherit; }
 .pc-income-val { font-size: 11px; font-weight: 800; color: var(--accent); white-space: nowrap; }
 .pc-income-val .pc-cap { color: var(--mut); font-weight: 400; font-size: 10px; }
 /* 进度条行：进度条 + 内联收取小按钮 */
-.pc-prog-row { display: flex; align-items: center; gap: 5px; margin-top: 3px; }
+.pc-prog-row { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
 .pc-prog-bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; flex: 1; min-width: 0; }
 .pc-prog-fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--accent)); border-radius: 4px; transition: width .3s; }
 /* 内联收取按钮（六边形底框 + 手指图标，1.3倍放大） */
@@ -239,14 +248,15 @@ input { font-family: inherit; }
 .pc-rating-row { display: flex; justify-content: flex-start; margin-bottom: 4px; }
 
 /* 车位中央：车图 + 叠加元素（评级/品牌/状态） */
-.pc-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; position: relative; overflow: hidden; }
-/* 评级徽章：车图右上角叠加 — 与品牌LOGO右边缘对齐 */
-.pc-body > .pc-rating { position: absolute; top: 0; right: 2px; left: auto; z-index: 4; }
+.pc-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; position: relative; overflow: visible; }
+/* 评级徽章：车图右上角叠加（在 pc-img-wrap 内部定位） */
+.pc-img-wrap > .pc-rating { position: absolute; top: -2px; right: -2px; z-index: 4; }
 /* 车图包裹层：relative定位，品牌图标定位基准 — 不裁剪子元素 */
-.pc-img-wrap { position: relative; display: inline-block; line-height: 0; overflow: visible; }
+.pc-img-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; line-height: 0; overflow: visible; width: 140px; height: 88px; flex-shrink: 0; }
+.pc-img-wrap.clickable { cursor: pointer; }
 /* 品牌图标：车图右下角（在 pc-img-wrap 内定位）— 放大1.3倍 */
 .pc-img-wrap .pc-brand-logo,
-.pc-img-wrap > img[alt]:not([alt=""]):not(.pc-car-img) { position: absolute; right: 2px; bottom: 2px; width: 39px; height: 29px; object-fit: contain; z-index: 3; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); pointer-events: none; }
+.pc-img-wrap > img[alt]:not([alt=""]):not(.pc-car-img) { position: absolute; right: 2px; bottom: 2px; width: 32px; height: 24px; object-fit: contain; z-index: 3; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); pointer-events: none; }
 /* 品牌文字fallback（logoImg返回的span） */
 .pc-img-wrap > span.text-mut { position: absolute; right: 2px; bottom: 2px; font-size: 8px; color: rgba(255,255,255,.7); background: rgba(0,0,0,.35); padding: 1px 4px; border-radius: 3px; z-index: 3; pointer-events: none; }
 /* 驾驶员叠加：车图左下角显示员工头像或空座图标 */
@@ -262,15 +272,15 @@ input { font-family: inherit; }
 .pc-driver-overlay.empty { background: rgba(0,0,0,.35); border: 1.5px dashed rgba(255,255,255,.5); border-radius: 50%; width: 26px; height: 26px; }
 .pc-driver-empty { font-size: 14px; opacity: .7; }
 /* 车名：车图下方居中 —— 允许长车名换行显示 */
-.pc-car-name { font-size: 11px; font-weight: 900; color: var(--sub); margin-top: 2px; text-align: center; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; padding: 0 4px; }
+.pc-car-name { font-size: 11px; font-weight: 900; color: var(--sub); margin-top: 2px; text-align: center; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; max-width: 150px; padding: 0 4px; flex-shrink: 0; }
 /* 强化等级：跟在名字后面内联显示 */
 .pc-enhance { color: var(--gold, #f5a623); font-size: 10px; font-weight: 900; margin-left: 3px; }
-.pc-big-img { max-height: 105px; max-width: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.pc-big-img { height: 82px; width: auto; max-width: 130px; object-fit: contain; border-radius: 8px; }
 .pc-doc-icon { position: absolute; top: 4px; right: 4px; font-size: 18px; opacity: .35; pointer-events: none; }
 /* 车辆评级徽章（文字版：彩色方块+白色字母） */
 .pc-rating { display: inline-block; padding: 3px 6px; min-width: 20px; text-align: center; font-size: 12px; font-weight: 900; color: #fff; border-radius: 4px; line-height: 1.2; box-shadow: 0 1px 3px rgba(0,0,0,.2); white-space: nowrap; }
-/* 车位卡片上的评级（绝对定位右上角） */
-.pc-body > .pc-rating { position: absolute; top: 4px; right: 4px; z-index: 4; }
+/* 车位卡片上的评级（在 pc-img-wrap 内绝对定位右上角） */
+.pc-img-wrap > .pc-rating { position: absolute; top: -2px; right: -2px; z-index: 4; }
 /* 名称行内联评级（如showCarInfo弹窗、车库列表等） */
 .uip-car-name-row > .pc-rating,
 .cg-rating-on-img > .pc-rating,
@@ -292,9 +302,9 @@ input { font-family: inherit; }
 
 .gal-car-thumb { max-width: 100%; max-height: 100%; object-fit: contain; }
 /* 车位底部：倒计时（收取按钮已内联到进度条右侧） */
-.pc-timer-bar { display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--mut); padding-top: 4px; border-top: 1px dashed rgba(0,0,0,.08); margin-top: auto; }
+.pc-timer-bar { display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--mut); padding-top: 2px; border-top: 1px dashed rgba(0,0,0,.08); margin-top: 2px; }
 /* 空车位 — 大P停车标志 */
-.pc-empty-park { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px 0; flex: 1; }
+.pc-empty-park { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 0; flex: 1; }
 .pc-p-icon { font-size: 56px; font-weight: 900; color: #ffd700; text-shadow: 0 2px 0 #b8860b, 0 4px 12px rgba(184,134,11,.35); line-height: 1; }
 .pc-p-label { font-size: 11px; color: var(--mut); margin-top: 4px; font-weight: 700; }
 
@@ -702,19 +712,21 @@ input { font-family: inherit; }
 .hire-tab.active { background: #f59e0b; color: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 /* 雇佣好友行：头像 | 车辆信息(评级+车图+名称+身价) | 操作(费用+按钮) */
 .friend-hire-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--panel); border-radius: 10px; margin-bottom: 6px; border: 1px solid var(--line); }
-.fhr-avatar { width: 44px; height: 44px; border-radius: 6px; overflow: hidden; background: var(--bg); flex-shrink: 0; border: 1px solid var(--line); }
+.fhr-avatar { width: 44px; height: 44px; border-radius: 6px; overflow: hidden; background: var(--bg); flex-shrink: 0; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; }
 .fhr-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.fhr-avatar-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg,#e8f5e9,#c8e6c9); }
-/* 车辆区域：评级角标在车图左上角 + 名称 + 身价 */
-.fhr-car-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.fhr-car-img-wrap { position: relative; display: inline-block; line-height: 0; }
+.fhr-avatar-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 22px; background: linear-gradient(135deg,#e8f5e9,#c8e6c9); }
+/* 车辆区域：横向布局 — 车图(含评级角标)在左，名称+身价在右 */
+.fhr-car-wrap { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.fhr-car-img-wrap { position: relative; display: inline-block; line-height: 0; flex-shrink: 0; }
 .fhr-car-img-wrap img { vertical-align: top; }
+/* 名称+身价列（车图右侧） */
+.fhr-info-col { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 /* 评级角标：绝对定位在车辆素材左上角 */
 .fhr-rating { position: absolute; top: -2px; left: -2px; font-size: 11px; font-weight: 900; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 4px; color: #fff; z-index: 2; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .fhr-rating.rating-D { background: #9ca3af; } .fhr-rating.rating-C { background: #4ea8de; }
 .fhr-rating.rating-B { background: #9d4edd; } .fhr-rating.rating-A { background: #e9c46a; } .fhr-rating.rating-S { background: #e63946; }
-.fhr-name { font-size: 13px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-.fhr-networth { font-size: 12px; font-weight: 700; color: var(--sub); }
+.fhr-name { font-size: 13px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fhr-networth { font-size: 12px; font-weight: 700; color: var(--sub); white-space: nowrap; }
 .fhr-nw-icon { font-size: 13px; }
 .fhr-action { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 56px; }
 .fhr-cost { font-size: 13px; font-weight: 800; color: var(--green); white-space: nowrap; }
@@ -763,6 +775,11 @@ input { font-family: inherit; }
   background: var(--green); border: none; color: #fff; font-weight: 900;
 }
 .fc-claimed-btn { background: #e9ecef; color: #444; cursor: default; }
+/* 邀请码 + 刷新进度 */
+.fc-invite-code { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; color: var(--sub); margin: 2px 12px 10px; flex-wrap: wrap; }
+.fc-invite-code b { color: var(--accent); font-size: 13px; letter-spacing: .5px; }
+.fc-refresh-btn { padding: 4px 12px; border-radius: 14px; border: 1px solid var(--accent); background: var(--panel); color: var(--accent); font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.fc-refresh-btn:active { background: var(--accent); color: #fff; }
 
 /* --- A11 任务章节 --- */
 /* --- A11 任务/章节（原型重构）--- */
@@ -1470,7 +1487,7 @@ input { font-family: inherit; }
 /* ===== 滑动换页提示：左右边缘箭头 + 一次性手势引导 ===== */
 /* 左右边缘半透明箭头：仅在可滑动方向出现，可点击翻页，带呼吸动效 */
 .swipe-chevron {
-  position: absolute; top: 50%; transform: translateY(-50%);
+  position: absolute; top: 58%; transform: translateY(-50%);
   width: 40px; height: 40px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,.92); color: var(--accent);
