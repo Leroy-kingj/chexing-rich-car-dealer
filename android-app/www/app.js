@@ -2255,7 +2255,7 @@ function watchAd(tierIdx){
         toast(`观看广告完成 (${S.rchAds.watched[tierIdx]}/${t.ads})`);
         save(); renderRechargeModal();
       } else {
-        toast('广告未完整观看，无法获得进度');
+        toast('广告还在准备中，请稍后再试');
       }
     }).catch(() => {
       toast('广告加载失败，请稍后重试');
