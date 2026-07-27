@@ -1466,23 +1466,8 @@ function renderParkCard(inst, idx){
   const rmS = String(remainSec % 60).padStart(2, '0');
   const rm = remainSec > 0 ? `${rmH}:${rmM}:${rmS}` : '已满仓';
 
-  // 工作员工信息（叠加在车图左下角）
+  // 员工信息仅在收入进度区显示（pc-income-emp-wrap），不在车图上叠加头像
   let workEmpHtml = '';
-  if(inst.empIid){
-    const emp = S.employees.find(e => e.iid === inst.empIid);
-    if(emp && emp.workEnd > now()){
-      const eidx = S.employees.indexOf(emp);
-      const remain = Math.ceil((emp.workEnd - now()) / 1000);
-      const h = String(Math.floor(remain / 3600)).padStart(2,'0');
-      const m = String(Math.floor((remain % 3600) / 60)).padStart(2,'0');
-      const s = String(remain % 60).padStart(2,'0');
-      workEmpHtml = `
-        <div class="pc-driver-overlay busy" data-action="emp-info" data-eidx="${eidx}" title="${emp.name} 工作中 剩余${h}:${m}:${s}" style="display:flex!important;visibility:visible!important;opacity:1!important;">
-          ${renderEmpAvatar(emp)}
-          <span class="pc-driver-status busy"></span>
-        </div>`;
-    }
-  }
 
   // 布局：员工头像+收入进度(含内联收取按钮) → 车图(含评级/品牌叠加/工作员工) → 倒计时
   // 收入进度区员工头像（圆形，显示当前安排在此车工作的员工）
@@ -3184,6 +3169,7 @@ function renderGarageTab(){
           ${imgCornerIcon}
           ${thumb(c.id)}
           <span class="gg-card-status ${statusCls}">${statusIcon}${statusTxt}</span>
+          ${garageEmpInfo ? `<div class="gg-card-emp-overlay">${garageEmpInfo}</div>` : ''}
         </div>
         <!-- 统计数据（非好友家车辆） -->
         ${inst.atFriend ? '' : `<div class="gg-card-stats">
@@ -3192,8 +3178,6 @@ function renderGarageTab(){
         </div>`}
         <!-- 好友家车辆信息（替代统计） -->
         ${friendInfo}
-        <!-- 工作员工信息（信息区显示） -->
-        ${garageEmpInfo}
         <!-- 操作按钮 -->
         ${actionBtn}
       </div>`;
