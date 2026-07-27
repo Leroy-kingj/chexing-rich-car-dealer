@@ -1401,6 +1401,8 @@ input { font-family: inherit; }
 /* ---------- 辅助 ---------- */
 .section { margin-bottom: 12px; }
 .section h3 { font-size: 14px; font-weight: 800; margin-bottom: 8px; }
+/* 公告/消息内容左边留间距 */
+.section > .text-mut { padding-left: 10px; }
 .modal-title { font-size: 16px; font-weight: 900; text-align: center; margin-bottom: 12px; }
 .divider { height: 1px; background: var(--line); margin: 10px 0; }
 .text-center { text-align: center; }
