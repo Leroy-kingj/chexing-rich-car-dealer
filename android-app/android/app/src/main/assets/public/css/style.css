@@ -78,6 +78,8 @@ input { font-family: inherit; }
 .tb-btn:active { background: var(--bg); }
 .tb-title { font-size: 16px; font-weight: 800; }
 .tb-menu { font-size: 22px; }
+.tb-sound { font-size: 18px; }
+.tb-sound:active { transform: scale(0.9); }
 
 /* ---------- 资源条 ---------- */
 #resbar { display: flex; align-items: center; gap: 5px; padding: 6px 8px; background: var(--panel); border-bottom: none; box-shadow: var(--shadow-sm); flex-shrink: 0; flex-wrap: wrap; }
@@ -407,7 +409,7 @@ input { font-family: inherit; }
 .info-modal-close { margin: 16px auto 6px; max-width: 200px; }
 
 /* ---------- Toast ---------- */
-.toast { position: fixed; top: 40%; left: 50%; transform: translateX(-50%); background: rgba(30,30,30,.85); color: #fff; padding: 10px 22px; border-radius: 14px; font-size: 13px; font-weight: 600; z-index: 200; pointer-events: none; animation: fadeInUp .25s ease; white-space: nowrap; backdrop-filter: blur(4px); }
+.toast { position: fixed; top: 40%; left: 50%; transform: translateX(-50%); background: rgba(30,30,30,.85); color: #fff; padding: 10px 22px; border-radius: 14px; font-size: 13px; font-weight: 600; z-index: 200; pointer-events: none; animation: fadeInUp .25s ease; max-width: 80vw; text-align: center; white-space: pre-wrap; word-break: break-all; backdrop-filter: blur(4px); }
 @keyframes fadeInUp { from{opacity:0;transform:translate(-50%,10px)} to{opacity:1;transform:translate(-50%,0)} }
 
 /* ==================== 通用按钮（基础扁平样式） ==================== */
@@ -763,13 +765,13 @@ input { font-family: inherit; }
 .fc-rwd-gold { width: 32px; height: 32px; object-fit: contain; }
 .fc-rwd-money { width: 28px; height: 28px; object-fit: contain; }
 .fc-rwd-count { font-size: 13px; font-weight: 900; color: var(--sub); }
-.fc-actions { display: flex; align-items: flex-start; justify-content: center; gap: 16px; margin: 0 12px 8px; }
-.fc-action-item { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
-.fc-btn { padding: 10px 20px; border-radius: 10px; font-size: 14px; cursor: pointer; text-align: center; transition: opacity .15s; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+.fc-actions { display: flex; align-items: stretch; justify-content: stretch; gap: 16px; margin: 0 12px 8px; }
+.fc-action-item { display: flex; flex-direction: column; align-items: stretch; gap: 4px; flex: 1 1 0%; min-width: 0; }
+.fc-btn { padding: 10px 20px; border-radius: 10px; font-size: 14px; cursor: pointer; text-align: center; transition: opacity .15s; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 4px;
   background: var(--green); border: none; font-weight: 900; color: #fff; width: 100%; box-sizing: border-box;
 }
 .fc-btn-done { background: #e9ecef; color: #444; }
-.fc-btn-count { font-size: 12px; font-weight: 600; color: var(--sub); }
+.fc-btn-count { font-size: 12px; font-weight: 600; color: var(--sub); text-align: center; }
 .fc-btn-icon { font-size: 16px; margin-right: 2px; white-space: nowrap; }
 .fc-claim-btn { display: block; width: calc(100% - 24px); margin: 8px 12px; padding: 12px 0; border-radius: 10px; font-size: 16px; cursor: pointer; text-align: center;
   background: var(--green); border: none; color: #fff; font-weight: 900;

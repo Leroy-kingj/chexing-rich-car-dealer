@@ -355,6 +355,59 @@ function initTaocheState(){
 
 /* ---------- 存档 ---------- */
 function save(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} }
+
+/* ==================== 音效系统（Web Audio 程序化合成，无需素材文件） ==================== */
+/* 说明：使用 Oscillator 实时合成音效，在 Android WebView 下零延迟、无加载/素材依赖、可离线运行。
+   自动播放策略要求首次用户手势后创建/恢复 AudioContext，故在全局 click 中解锁。 */
+const SFX = (() => {
+  let ctx = null;
+  function ensure(){
+    if(!ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return null;
+      try { ctx = new AC(); } catch(e){ return null; }
+    }
+    if(ctx && ctx.state === 'suspended'){ ctx.resume().catch(()=>{}); }
+    return ctx;
+  }
+  // 单个音符（带攻击/衰减包络）
+  function tone(c, freq, start, dur, type, vol){
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, start);
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.linearRampToValueAtTime(vol, start + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(start); o.stop(start + dur + 0.03);
+  }
+  const presets = {
+    // 通用按钮点击：轻快短促的“嗒”
+    click:   c => { tone(c, 660, c.currentTime,      0.05, 'triangle', 0.16); },
+    // 领取/成功：上行两音，悦耳
+    success: c => { tone(c, 523, c.currentTime,      0.12, 'sine', 0.22);
+                    tone(c, 784, c.currentTime + 0.10, 0.20, 'sine', 0.22); },
+    // 收取刀乐：清脆双音“叮叮”
+    coin:    c => { tone(c, 988, c.currentTime,      0.07, 'square', 0.14);
+                    tone(c, 1319, c.currentTime + 0.06, 0.10, 'square', 0.14); },
+    // 操作失败/余额不足：低沉下行“嗡”
+    error:   c => { tone(c, 220, c.currentTime,      0.10, 'sawtooth', 0.16);
+                    tone(c, 150, c.currentTime + 0.08, 0.18, 'sawtooth', 0.16); },
+    // 轻量弹窗/小反馈
+    pop:     c => { tone(c, 440, c.currentTime,      0.05, 'sine', 0.12); },
+  };
+  function play(name){
+    if(S && S.soundOn === false) return;        // 静音
+    const c = ensure(); if(!c) return;
+    const p = presets[name]; if(!p) return;
+    try { p(c); } catch(e){}
+  }
+  function unlock(){ ensure(); }
+  function setMuted(m){ if(S){ S.soundOn = !m; save(); } }
+  function isMuted(){ return !!(S && S.soundOn === false); }
+  return { play, unlock, setMuted, isMuted };
+})();
 function load(){
   try{
     const raw = localStorage.getItem(SAVE_KEY);
@@ -772,9 +825,9 @@ function checkFspotUnlock(){
 checkFspotUnlock();
 
 /* ---------- DOM 快捷 ---------- */
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.remove('hidden'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add('hidden'),2200); }
+function toast(msg){ const t=$('#toast'); t.innerHTML=msg; t.classList.remove('hidden'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add('hidden'),2200); }
 function ask(text, onOk){
-  $('#confirm-text').textContent=text; $('#confirm').classList.remove('hidden');
+  $('#confirm-text').innerHTML=text; $('#confirm').classList.remove('hidden');
   const ok=$('#confirm-ok'), cx=$('#confirm-cancel');
   const _ok=ok.onclick, _cx=cx.onclick;
   ok.onclick=()=>{ $('#confirm').classList.add('hidden'); ok.onclick=_ok;cx.onclick=_cx; onOk&&onOk(); };
@@ -782,9 +835,11 @@ function ask(text, onOk){
 }
 /* 刀乐不足统一提示：是否前往兑换刀乐弹窗 */
 function needDollars(){
+  SFX.play('error');
   ask('刀乐不足，是否前往兑换？', ()=>renderExchangeModal());
 }
 function needBeans(){
+  SFX.play('error');
   ask('黄金不足，是否前往充值？', ()=>renderRechargeModal());
 }
 function openModal(html){
@@ -1158,6 +1213,8 @@ function enterGame(){
 
   $('#game').classList.remove('hidden');
   $('#game').classList.add('active');
+  // 音效开关图标同步存档状态
+  const sb = $('#tb-sound'); if(sb) sb.textContent = SFX.isMuted() ? '🔇' : '🔊';
   go('home');
 
   // 启动 tick 循环
@@ -1646,9 +1703,10 @@ function _updateFspotTimes(){
                                         : Math.floor((parker.parkAccrued || 0) / ((incPerMin || 1) / 60));
     const fullSec = incPerMin > 0 ? Math.floor((cap / incPerMin) * 60) : 0;
     const displaySec = (fullSec > 0 && parkedSec > fullSec) ? fullSec : parkedSec;
-    const m = Math.floor(displaySec / 60);
+    const h = Math.floor(displaySec / 3600);
+    const m = Math.floor((displaySec % 3600) / 60);
     const s = displaySec % 60;
-    const timeStr = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    const timeStr = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 
     /* 更新停留时间文本 */
     const timeEl = card.querySelector('.fspot-park-time');
@@ -1802,7 +1860,7 @@ function refreshFspotGrid(){
 
 // 格式化好友停车时长（MM:SS）
 function formatParkTime(parker){
-  if(!parker || parker.parkedAtMe === null || parker.parkedAtMe === undefined) return '--:--';
+  if(!parker || parker.parkedAtMe === null || parker.parkedAtMe === undefined) return '--:--:--';
   // 优先用真实停车时刻 parkedAtTs 推算（与开罚单门槛一致），缺失时回退 accrued 反推
   if(parker.parkedAtTs){
     const fcarId = parker.parkCarId || parker.bestCarId;
@@ -1812,16 +1870,17 @@ function formatParkTime(parker){
     let secs = Math.floor((now() - parker.parkedAtTs) / 1000);
     const fullSec = incPerMin > 0 ? Math.floor((cap / incPerMin) * 60) : 0;
     if(fullSec > 0 && secs > fullSec) secs = fullSec; // 满仓后停留时间停在此处
-    const m = Math.floor(secs / 60);
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
     const s = secs % 60;
-    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   }
   // 简化：用 accrued 反推大致时间
   const fcarId = parker.parkCarId || parker.bestCarId;
   const pcar = CAR_BY_ID[fcarId];
-  if(!pcar) return '--:--';
+  if(!pcar) return '--:--:--';
   const incPerMin = incomeOf({carId: pcar.id});
-  if(incPerMin <= 0) return '00:00';
+  if(incPerMin <= 0) return '00:00:00';
   const mins = Math.floor((parker.parkAccrued || 0) / incPerMin);
   return `${String(mins).padStart(2,'0')}:00`;
 }
@@ -1840,28 +1899,28 @@ function renderOrderLockArea(){
     </div>
     <div class="ol-lock">
       <div class="ol-lock-icon">🔒</div>
-      ${lockedIdx>=0?`<div class="ol-lock-price">$${f(cost)}</div>
+      ${lockedIdx>=0?`<div class="ol-lock-price">${DOLLAR_IC}${f(cost)}</div>
         <button class="ol-lock-btn${canAfford?' can-afford':''}" data-action="unlock-spot" data-idx="${lockedIdx}">解锁车位</div>`
         :'<div style="font-size:11px;color:var(--mut)">全部已解锁</div>'}
     </div>`;
 }
 
 /* ==================== A03 分享弹窗 ==================== */
-// 分享来源：从"名车之旅"任务"前往"按钮打开时，分享成功后自动回到任务界面刷新进度
+// 分享统一走 TapTap SDK，不再弹自定义分享面板
 let _shareReturnQuests = false;
 function renderShare(fromQuest){
   _shareReturnQuests = !!fromQuest;
-  openModal(`
-    <div class="modal-title">分享给好友</div>
-    <div class="share-grid">
-      <div class="share-item" data-action="share-wx-moments"><div class="share-ic">📱</div><div class="share-label">微信朋友圈</div></div>
-      <div class="share-item" data-action="share-wx-friends"><div class="share-ic">💬</div><div class="share-label">微信好友</div></div>
-      <div class="share-item" data-action="share-weibo"><div class="share-ic">📢</div><div class="share-label">新浪微博</div></div>
-      <div class="share-item" data-action="share-qq"><div class="share-ic">🐧</div><div class="share-label">QQ</div></div>
-    </div>
-    ${/^(localhost|127\.0\.0\.1|::1)$/i.test(location.hostname) ? '<button class="btn-danger btn-wide mt-8" data-action="reset-save">⚠️ 重置存档（清空全部进度）</button>' : ''}
-    <button class="btn-ghost btn-wide mt-8" data-action="close-modal">取消</button>
-  `);
+  // 直接调用 TapTap SDK 分享（不再弹出分享面板）
+  ttShareToTapTap();
+  // 计数+任务逻辑
+  S.stats.shareCount++;
+  save(); updateNavDots();
+  syncInviteRewards().then(res => {
+    if(res.ok && res.newCount === 0){
+      toast('已分享！需有好友通过你的邀请链接\n下载注册后才能获得黄金奖励');
+    }
+  });
+  if(_shareReturnQuests){ _shareReturnQuests = false; renderQuests(); }
 }
 
 /* ==================== A04 个人信息 ==================== */
@@ -2020,16 +2079,22 @@ async function ttReview(){
   if(!(r && r.success)) toast((r && r.msg) ? ('打开评价失败：' + r.msg) : '打开评价失败');
 }
 
-// 分享游戏到 TapTap 动态
+// 分享游戏到 TapTap 动态（统一分享入口）
 async function ttShareToTapTap(){
   if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中使用分享功能'); return; }
+  const code = ensureInviteCode();
   toast('正在调起 TapTap 分享...');
   const r = await window.ChexingSDK.shareToTapTap({
     title: '抢车位：华夏崛起',
-    contents: '我在抢车位：华夏崛起当老板，资产破亿！快来一起经营你的车位帝国～'
+    contents: `【我的邀请码 ${code}】我在《抢车位：华夏崛起》停车赚钱，快来一起玩！`
   });
-  if(r && r.success) toast('分享成功');
-  else toast((r && r.msg) ? ('分享失败：' + r.msg) : '分享失败');
+  if(r && r.success){
+    S.stats.shareCount++; save(); updateNavDots();
+    syncInviteRewards();
+    toast('分享成功');
+  } else {
+    toast((r && r.msg) ? ('分享失败：' + r.msg) : '分享失败');
+  }
 }
 
 // 打开排行榜
@@ -2138,13 +2203,19 @@ function redeemGiftCode(){
 
 /* ===== 分享系统 ===== */
 /**
- * 分享游戏（调起系统分享面板或原生分享）
+ * 分享游戏（原生环境走 TapTap SDK，浏览器降级复制文案）
  * @param {object} opts 可选分享参数
  */
 async function shareGame(opts = {}){
   const code = ensureInviteCode();
-  const baseUrl = opts.url || 'https://www.taptap.cn/app/抢车位：华夏崛起'; // TODO: 替换为实际 TapTap 游戏链接
-  // 邀请链接带邀请码，用于追踪真实注册的新用户
+
+  // 原生环境：统一走 TapTap SDK 分享
+  if(window.ChexingSDK && window.ChexingSDK.isNative){
+    return ttShareToTapTap();
+  }
+
+  // 浏览器降级：复制文案到剪贴板
+  const baseUrl = opts.url || 'https://www.taptap.cn/app/抢车位：华夏崛起';
   const sep = baseUrl.indexOf('?') >= 0 ? '&' : '?';
   const inviteUrl = `${baseUrl}${sep}inviter=${encodeURIComponent(code)}`;
   const defaultOpts = {
@@ -2153,24 +2224,14 @@ async function shareGame(opts = {}){
     url: inviteUrl,
   };
   const finalOpts = { ...defaultOpts, ...opts };
-  if(!opts.url) finalOpts.url = inviteUrl; // 防止 opts.url 覆盖掉邀请码
+  if(!opts.url) finalOpts.url = inviteUrl;
 
-  if(window.ChexingSDK){
-    const result = await window.ChexingSDK.share(finalOpts);
-    if(result.success){
-      toast('分享成功！');
-      // 分享成功后同步真实邀请数据（由 SDK 返回真实注册用户才发奖）
-      syncInviteRewards();
-    }
-  } else {
-    // 浏览器降级：复制文案到剪贴板
-    try {
-      await navigator.clipboard.writeText(finalOpts.text + '\n' + (finalOpts.url || ''));
-      toast('分享内容已复制到剪贴板');
-      syncInviteRewards();
-    } catch(e) {
-      toast('分享功能暂不可用');
-    }
+  try {
+    await navigator.clipboard.writeText(finalOpts.text + '\n' + (finalOpts.url || ''));
+    toast('分享内容已复制到剪贴板');
+    syncInviteRewards();
+  } catch(e) {
+    toast('分享功能暂不可用');
   }
 }
 
@@ -2306,6 +2367,7 @@ function doExchange(){
       if(result && result.success){
         S.dollars += amt; S.stats.earned += amt; S.exch.count++;
         updateHUD(); renderExchangeModal();
+        SFX.play('coin');
         toast(`观看广告完成，兑换成功！+${f(amt)} 刀乐（今日第${S.exch.count}/${EXCH_DAILY_LIMIT}次）`);
         save();
       } else {
@@ -2318,6 +2380,7 @@ function doExchange(){
     // 无 SDK 时降级：演示模式
     S.dollars += amt; S.stats.earned += amt; S.exch.count++;
     updateHUD(); renderExchangeModal();
+    SFX.play('coin');
     toast(`观看广告完成，兑换成功！+${f(amt)} 刀乐（今日第${S.exch.count}/${EXCH_DAILY_LIMIT}次）`);
     save();
   }
@@ -2940,7 +3003,7 @@ function doHire(fruid, cost, mode){
   }
   const verb = mode==='poach'?'挖角':'雇佣';
   // 规范 A09：雇佣/挖角按钮 → 弹出二次确认界面
-  ask(`确定花费 $${f(cost)} ${verb} ${fr.name} 吗？`, ()=>{
+  ask(`确定花费 ${DOLLAR_IC}${f(cost)} ${verb} ${fr.name} 吗？`, ()=>{
     // 二次确认时再次检查（防止确认期间状态变化 / 同一目标被重复雇佣）
     if(fr.employedBy === S.uid){ toast(`「${fr.name}」已经是你的员工了`); return; }
     if(S.dollars < cost){ needDollars(); return; }
@@ -3071,6 +3134,7 @@ function claimFC(){
     S.inst.push(mk(21, 'garage'));
   }
   toast('🎉 首充奖励已领取！');
+  SFX.play('success'); SFX.play('coin');
   closeModal(); save(); updateHUD();
   if(current==='home') refreshParkGrid();
   updateInfobar();
@@ -3154,8 +3218,8 @@ function renderQuests(){
         if(claimed) btnHtml = `<button class="ch-task-btn done" disabled>已领取</button>`;
         else if(ev.done) btnHtml = `<button class="ch-task-btn claim" data-action="claim-task" data-ci="${ci}" data-no="${t.no}">领取</button>`;
         else {
-          // 分享类任务：前往直接弹出分享弹窗；其余任务：前往跳回主页
-          const goAction = /分享/.test(t.text||'') ? 'open-share' : 'go-home';
+          // 分享类任务：前往直接调 TapTap SDK 分享；其余任务：前往跳回主页
+          const goAction = /分享/.test(t.text||'') ? 'quest-share' : 'go-home';
           btnHtml = `<button class="ch-task-btn go" data-action="${goAction}">前往</button>`;
         }
         return `<div class="ch-task-row${ev.done&&!claimed?' ch-task-claimable':''}">
@@ -3181,7 +3245,8 @@ function claimTask(ci, no){
   if(!taskEval(t).done){ toast('任务条件尚未达成，无法领取'); return; }
   S.tasks[key] = true;
   if(t.reward) S.dollars += t.reward;
-  toast(`任务完成！+$${f(t.reward||0)} 刀乐`);
+  SFX.play('success'); SFX.play('coin');
+  toast(`任务完成！+${DOLLAR_IC}${f(t.reward||0)} 刀乐`);
   save(); updateHUD(); renderQuests();
 }
 
@@ -3192,6 +3257,7 @@ function claimChapter(ci){
   if(!chapterAllDone(ci)){ toast('请先完成本章全部任务'); return; }
   const car = CAR_BY_ID[ch.rewardCar];
   S.questChapters[ci] = true;
+  SFX.play('success');
   save(); updateHUD();
   if(!car){
     toast('章节奖励已领取');
@@ -3490,7 +3556,8 @@ function renderGalleryTab(){
   const ownedUnique = ownedIds.size;
 
   let h = `<div class="gg-progress-bar"><div class="gg-progress-fill" style="width:${totalUnique>0?(ownedUnique/totalUnique*100):0}%"></div><span class="gg-progress-text">车辆收集进度：${ownedUnique}/${totalUnique}</span></div>`;
-  galleries.forEach((gal, gi) => {
+  // 预计算每组状态，再排序：可领奖 > 未收集齐 > 已领奖；同状态按收集奖励黄金从低到高
+  const galItems = galleries.map((gal, gi) => {
     const carIds = gal.carIds || gal.members || [];
     const ownedInGal = carIds.filter(cid => ownedIds.has(cid)).length;
     const total = carIds.length;
@@ -3498,7 +3565,18 @@ function renderGalleryTab(){
     const galId = gal.id || gi;
     const galReward = gal.reward || (gi===0?30000:gi===1?20000:10000);
     const claimed = !!S.gallery[galId];
+    let status;
+    if(complete && !claimed) status = 0;        // 可领奖
+    else if(!complete) status = 1;              // 未收集齐
+    else status = 2;                            // 已领奖
+    return { gal, galId, carIds, total, complete, galReward, claimed, status };
+  });
+  galItems.sort((a, b) => {
+    if(a.status !== b.status) return a.status - b.status;  // 状态优先级
+    return a.galReward - b.galReward;                      // 同状态：奖励黄金从低到高
+  });
 
+  galItems.forEach(({ gal, galId, carIds, total, complete, galReward, claimed }) => {
     h += `<div class="gg-gal-group">
       <div class="gg-gal-head">
         <span class="gg-gal-name">${gal.name}</span>
@@ -3675,7 +3753,7 @@ function taocheBuy(ti){
   // 保护机制：该车权重+50%（即下次有效价值*1.5）
   tier.protection[car.id] = (tier.protection[car.id] || 0) + 1;
 
-  toast(`🎊 在【${tier.name}】淘到 ${car.name}！花费 $${f(cost)}`);
+  toast(`🎊 在【${tier.name}】淘到 ${car.name}！花费 ${DOLLAR_IC}${f(cost)}`);
   showCarGet(car);
   // 刷新市场界面（showCarGet会打开弹窗，关闭后需刷新）
   setTimeout(()=>{ if(current==='market') renderMarketTab(); }, 100);
@@ -4008,7 +4086,7 @@ function renderFriendTab(){
         <div class="nf-invite-img">🎁</div>
         <div class="nf-invite-text">邀请好友进入游戏<br>每个新用户奖励</div>
         <div class="nf-invite-reward">${BEAN_IC}<span style="color:var(--gold);font-size:20px;font-weight:900">10000</span><span style="color:var(--gold)">黄金</span></div>
-        <button class="btn-primary nf-invite-btn" data-action="open-share">邀请</button>
+        <button class="btn-primary nf-invite-btn" data-action="nf-invite-share">邀请</button>
       </div>
       ${botHtml}
     `;
@@ -5149,6 +5227,7 @@ document.addEventListener('click', e => {
   if(el){
     const action = el.dataset.action;
     if(e.stopPropagation) e.stopPropagation();
+    SFX.unlock(); SFX.play('click');   // 全局按钮点击音效
 
   switch(action){
     // 导航
@@ -5173,6 +5252,13 @@ document.addEventListener('click', e => {
     // 顶栏
     case 'open-profile': renderProfile(); break;
     case 'open-share': renderShare(true); break;
+    case 'toggle-sound': {
+      const muted = !SFX.isMuted();
+      SFX.setMuted(muted);
+      const sb = $('#tb-sound'); if(sb) sb.textContent = muted ? '🔇' : '🔊';
+      if(!muted) SFX.play('pop');   // 取消静音时给一声反馈
+      break;
+    }
     case 'go-new-friends':
       closeModal();
       go('friends');            // renderFriends 内部会重置 rankTab='asset'
@@ -5266,11 +5352,20 @@ document.addEventListener('click', e => {
         save(); renderFirstCharge();
       }
       break;
+    case 'nf-invite-share':
+      // 好友面板「邀请」按钮：直接分享，不弹任务面板
+      ttShareToTapTap();
+      S.stats.shareCount++; save(); updateNavDots();
+      syncInviteRewards().then(res => {
+        if(res.ok && res.newCount === 0){
+          toast('已分享！需有好友通过你的邀请链接\n下载注册后才能获得黄金奖励');
+        }
+      });
+      break;
     case 'fc-invite':
       if((S.fc.friendsInvited||0) >= 5){ toast('邀请名额已满（5/5）'); return; }
-      // 分享邀请链接（带邀请码），奖励须由 SDK 返回真实注册用户后发放
-      toast('正在打开分享...');
-      shareGame({ text: `【我的邀请码 ${ensureInviteCode()}】我在《抢车位：华夏崛起》停车赚钱，快来一起玩！` });
+      // 分享统一走 TapTap SDK
+      ttShareToTapTap();
       renderFirstCharge(); // 内部会先从 SDK 同步真实邀请数据再渲染
       break;
     case 'refresh-invite':
@@ -5340,6 +5435,11 @@ document.addEventListener('click', e => {
       if(ri){ let rn = generateRandomName(); while(isNameTaken(rn)) rn = generateRandomName(); ri.value = rn; }
       break;
     // 分享
+    case 'quest-share':
+      // 任务面板「分享一次游戏」前往按钮：直接 TapTap 分享，不弹任务面板
+      ttShareToTapTap();
+      S.stats.shareCount++; save(); updateNavDots();
+      break;
     case 'share-game': shareGame(); break;
     // TapTap 登录
     case 'tap-login': tapLogin(); break;
@@ -5391,18 +5491,16 @@ document.addEventListener('click', e => {
       lotteryDraw(parseInt(el.dataset.cid));
       break;
 
-    // 分享（分享面板各渠道）
+    // 分享（所有渠道统一走 TapTap SDK）
     case 'share-wx-moments': case 'share-wx-friends': case 'share-weibo': case 'share-qq':
-      S.stats.shareCount++;
       closeModal();
-      // 分享本身不直接发邀请奖励；真实奖励须由 SDK 返回通过邀请链接注册的新用户后发放
-      shareGame({ text: `【我的邀请码 ${ensureInviteCode()}】我在《抢车位：华夏崛起》停车赚钱，快来一起玩！` });
+      ttShareToTapTap();
+      S.stats.shareCount++; save(); updateNavDots();
       syncInviteRewards().then(res => {
         if(res.ok && res.newCount === 0){
-          toast('已分享！需有好友通过你的邀请链接下载注册后，才能获得黄金奖励');
+          toast('已分享！需有好友通过你的邀请链接\n下载注册后才能获得黄金奖励');
         }
       });
-      updateNavDots();
       if(_shareReturnQuests){ _shareReturnQuests = false; renderQuests(); }
       break;
     case 'share-result': renderShare(); break;
@@ -5461,6 +5559,7 @@ function collectInst(iid){
   const amt = settleAccrued(inst);
   // 双重保险：即使 settleAccrued 已归零，再次显式清零
   inst.accrued = 0;
+  SFX.play('coin');
   toast(`收取 +${f(amt)} 刀乐`);
   save(); updateHUD();
   // 用 renderHome() 完整重渲染（含所有面板+员工位+HUD），确保进度条彻底归零
@@ -5484,6 +5583,7 @@ function collectAll(){
   });
   if(total <= 0){ toast('没有可收取的金额'); return; }
   // 注意：settleAccrued 内部已将收益累加进 S.dollars / S.stats.earned，此处不再重复累加
+  SFX.play('coin');
   toast(`一键收取 +${f(total)} 刀乐`);
   save(); updateHUD();
   if(current === 'home') renderHome(); else refreshAllParkGrids();
@@ -5674,6 +5774,7 @@ function claimGallery(gid){
   const reward = gal.reward || 10000;
   S.beans = (S.beans||0) + reward;
   S.gallery[gid] = true;
+  SFX.play('success'); SFX.play('coin');
   toast(`图鉴奖励已领取！+${fbean(reward)} 黄金`);
   save(); updateHUD();
   renderGalleryTab();
