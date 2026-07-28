@@ -10,6 +10,16 @@
  * - ChexingSDK.login()        TapTap 登录（返回 openid/unionid/昵称/头像）
  * - ChexingSDK.getAccount()   获取当前已登录账号
  * - ChexingSDK.logout()       退出 TapTap 登录
+ * - ChexingSDK.getInvitedUsers()  查询通过邀请链接真实注册的新用户（邀请奖励依据）
+ *
+ * TapTap 七大功能模块（ChexingTap 原生插件）：
+ * - ChexingSDK.complianceStartup() / complianceExit() / complianceState()  防沉迷合规
+ * - ChexingSDK.checkUpdate() / updateGame()                                更新
+ * - ChexingSDK.openReview()                                              评价
+ * - ChexingSDK.checkLicense()                                           正版校验
+ * - ChexingSDK.shareToTapTap()                                          分享到 TapTap
+ * - ChexingSDK.openLeaderboard()                                        排行榜
+ * - ChexingSDK.unlockAchievement() / showAchievements()                 成就
  *
  * 在非安卓环境（浏览器）中自动降级为 toast/模拟。
  */
@@ -196,6 +206,78 @@ const ChexingSDK = (() => {
     return callPlugin('ChexingLogin', 'logout', {});
   }
 
+  /**
+   * 查询通过当前玩家邀请链接真实下载/注册的新用户列表。
+   * 邀请奖励发放的唯一真实依据 —— 必须由原生端/服务端返回真实数据，前端不得伪造。
+   *
+   * @param {object} [opts]
+   * @param {string} [opts.inviteCode] 邀请者邀请码（缺省由原生端取当前登录账号）
+   * @returns {Promise<{success:boolean, users?:Array<{uid:string, name?:string, registeredAt?:number}>, msg?:string}>}
+   *   成功：{ success:true, users:[...] }  （无真实邀请时 users 为空数组）
+   *   失败/非原生：{ success:false, users:[] }
+   *
+   * 原生端约定插件：ChexingInvite.getInvitedUsers({inviteCode})
+   */
+  async function getInvitedUsers(opts = {}) {
+    if (!isNative) {
+      // 浏览器降级：默认无真实数据（满足"必须由 SDK 返回真实邀请"的要求，绝不伪造）
+      // 网页测试用：URL 带 ?mockInvite=N 时返回 N 个模拟用户，便于联调
+      try {
+        const m = new URLSearchParams(location.search).get('mockInvite');
+        const n = parseInt(m, 10);
+        if (!isNaN(n) && n > 0) {
+          const users = [];
+          for (let i = 1; i <= n; i++) {
+            users.push({ uid: 'mock_' + i, name: '模拟好友' + i, registeredAt: Date.now() });
+          }
+          return { success: true, users };
+        }
+      } catch (e) { /* ignore */ }
+      return { success: true, users: [] };
+    }
+    return callPlugin('ChexingInvite', 'getInvitedUsers', opts);
+  }
+
+  // ---- TapTap 七大功能模块（ChexingTap 原生插件） ----
+  // 统一封装：浏览器环境自动降级为 toast 提示
+  async function tapCall(method, data = {}) {
+    if (!isNative) {
+      warn(`ChexingTap.${method} called in browser (non-native), using fallback`);
+      toast(`请在 TapTap 客户端中使用「${method}」功能`);
+      return { success: false, msg: 'unsupported_platform' };
+    }
+    return callPlugin('ChexingTap', method, data);
+  }
+
+  /** 启动防沉迷合规（openId 缺省时由原生端取当前登录账号） */
+  async function complianceStartup(opts = {}) { return tapCall('complianceStartup', opts); }
+  /** 退出合规 */
+  async function complianceExit() { return tapCall('complianceExit'); }
+  /** 查询合规状态：{ ageRange, remainingTime, accessToken } */
+  async function complianceState() { return tapCall('complianceState'); }
+
+  /** 静默检测强制更新 */
+  async function checkUpdate() { return tapCall('checkUpdate'); }
+  /** 拉起应用内更新流程 */
+  async function updateGame() { return tapCall('updateGame'); }
+
+  /** 打开 TapTap 评价/评分页 */
+  async function openReview() { return tapCall('openReview'); }
+
+  /** 启动 TapTap 正版校验 */
+  async function checkLicense() { return tapCall('checkLicense'); }
+
+  /** 分享到 TapTap 动态：{ title?, contents?, failUrl? } */
+  async function shareToTapTap(opts = {}) { return tapCall('shareToTapTap', opts); }
+
+  /** 打开排行榜：{ leaderboardId, openId? } */
+  async function openLeaderboard(opts = {}) { return tapCall('openLeaderboard', opts); }
+
+  /** 解锁成就：{ achievementId } */
+  async function unlockAchievement(opts = {}) { return tapCall('unlockAchievement', opts); }
+  /** 打开成就面板 */
+  async function showAchievements() { return tapCall('showAchievements'); }
+
   // ---- 导出 ----
   return {
     isNative,
@@ -210,8 +292,22 @@ const ChexingSDK = (() => {
     login,
     getAccount,
     logout,
+    // 邀请
+    getInvitedUsers,
+    // 七大功能模块
+    complianceStartup,
+    complianceExit,
+    complianceState,
+    checkUpdate,
+    updateGame,
+    openReview,
+    checkLicense,
+    shareToTapTap,
+    openLeaderboard,
+    unlockAchievement,
+    showAchievements,
     // 版本信息
-    version: '1.1.0',
+    version: '1.2.0',
     platform: isNative ? 'android' : 'web',
   };
 

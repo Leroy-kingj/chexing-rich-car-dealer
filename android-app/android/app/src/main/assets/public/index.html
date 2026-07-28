@@ -3,17 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>车行</title>
-<link rel="stylesheet" href="css/style.css?v=20260727aw">
+<title>抢车位：华夏崛起</title>
+<link rel="stylesheet" href="css/style.css?v=20260727au">
 </head>
 <body>
 <div id="app">
 
-<!-- ==================== A01 加载页 ==================== -->
+<!-- ==================== A01 登录/启动页 ==================== -->
 <div id="loading" class="screen active">
-  <div class="loading-bg"></div>
-  <div class="loading-text">车行</div>
-  <button class="loading-back" data-action="loading-back">← 返回</button>
+  <div class="login-bg"><img src="assets/splash_login.jpg" alt="" draggable="false"></div>
+  <div class="login-content">
+    <button class="login-taptap-btn" id="login-btn" data-action="splash-tap-login">
+      <span class="login-btn-icon">🎮</span>
+      <span>TapTap 登录</span>
+    </button>
+    <div class="login-skip" data-action="splash-skip-login">跳过登录</div>
+    <div class="login-footer">v1.0.0 · TapTap 独家首发</div>
+  </div>
+  <div class="login-loading hidden" id="login-loading">
+    <div class="login-spinner"></div>
+    <span>正在连接 TapTap...</span>
+  </div>
 </div>
 
 <!-- ==================== 游戏主容器（A02+） ==================== -->
@@ -23,7 +33,7 @@
 <header id="topbar">
   <div class="top-left">
     <button class="tb-btn tb-back" data-action="go-back" title="返回">‹</button>
-    <h1 class="tb-title" id="tb-title">车行</h1>
+    <h1 class="tb-title" id="tb-title">抢车位：华夏崛起</h1>
   </div>
   <button class="tb-btn tb-menu" data-action="open-share" title="分享设置">⋮</button>
 </header>
@@ -31,15 +41,16 @@
 <!-- ====== 资源条（头像 + 货币） ====== -->
 <div id="resbar">
   <div class="res-avatar" data-action="open-profile" id="res-avatar">
-    <img src="" alt="" id="res-avatar-img">
+    <span class="res-avatar-emoji">👤</span>
+    <img src="" alt="" id="res-avatar-img" hidden>
   </div>
   <div class="res-item">
-    <span class="res-ic">💰</span>
+    <span class="res-ic"><img class="bean-ic" src="assets/gold-bar.png" alt="金"></span>
     <span class="res-val" id="res-beans">0</span>
     <button class="res-plus" data-action="open-recharge">+</button>
   </div>
   <div class="res-item">
-    <span class="res-ic">$</span>
+    <span class="res-ic"><img class="dollar-ic" src="assets/green-bills.png" alt="$"></span>
     <span class="res-val" id="res-dollars">0</span>
     <button class="res-plus" data-action="open-exchange">+</button>
   </div>
@@ -56,8 +67,12 @@
   <!-- ====== 功能入口行（欢乐夺宝/首充礼包/名车之旅/七日登陆） ====== -->
   <div id="featRow" class="feature-row"></div>
 
-  <!-- ====== 主内容区域（可左右滑动：车位1234 | 车位5678） ====== -->
+  <!-- ====== 主内容区域（可左右滑动：好友车位 | 车位1234 | 车位5678） ====== -->
   <div id="swiper">
+    <!-- 第0面板：好友专用车位 (A06) -->
+    <div class="swipe-panel" id="friendPanel">
+      <div id="friendParkGrid" class="parking-grid parking-grid-2col"></div>
+    </div>
     <!-- 第1页面板：车位 1-4 (A02 核心) -->
     <div class="swipe-panel active" id="panel1">
       <div id="parkGrid" class="parking-grid parking-grid-2col"></div>
@@ -69,6 +84,7 @@
     </div>
   </div>
   <div id="swiperDots" class="swiper-dots">
+    <span class="swiper-dot" data-panel="friendPanel"></span>
     <span class="swiper-dot active" data-panel="panel1"></span>
     <span class="swiper-dot" data-panel="panel2"></span>
   </div>
@@ -101,7 +117,6 @@
 <!-- ==================== 弹窗层 ==================== -->
 <div id="modal-overlay" class="hidden"></div>
 <div id="modal" class="modal hidden">
-  <button class="modal-close" id="modal-close" data-action="close-modal">×</button>
   <div id="modal-body"></div>
 </div>
 
@@ -126,8 +141,8 @@
 
 </div><!-- /#app -->
 
-<script src="game_data.js?v=20260727aw"></script>
-<script src="chexing-sdk.js?v=20260727aw"></script>
-<script src="app.js?v=20260727aw"></script>
+<script src="game_data.js?v=20260727au"></script>
+<script src="chexing-sdk.js?v=20260727au"></script>
+<script src="app.js?v=20260727au"></script>
 </body>
 </html>
