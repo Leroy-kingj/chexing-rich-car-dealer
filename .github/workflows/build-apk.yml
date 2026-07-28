@@ -32,6 +32,10 @@ jobs:
         working-directory: android-app
         run: npm ci
 
+      - name: Sync web assets to native (cap copy)
+        working-directory: android-app
+        run: npx cap copy
+
       - name: Grant execute permission for gradlew
         working-directory: android-app/android
         run: chmod +x gradlew
