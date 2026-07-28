@@ -1641,49 +1641,35 @@ function _updateFspotTimes(){
     const incPerMin = pcar ? incomeOf({carId: pcar.id}) : 0;
     const cap = pcar ? (pcar.capacity || 6300) : 6300;
 
-    /* 动态计算停车分钟数 */
-    const parkedMins = parker.parkedAtTs ? Math.floor((now() - parker.parkedAtTs) / 60000)
-                                         : Math.floor((parker.parkAccrued || 0) / (incPerMin || 1));
-    const fullMin = incPerMin > 0 ? Math.floor(cap / incPerMin) : 0;
-    const displayMins = (fullMin > 0 && parkedMins > fullMin) ? fullMin : parkedMins;
-    const h = Math.floor(displayMins / 60);
-    const m = displayMins % 60;
-    const timeStr = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    /* 动态计算停车时长（毫秒→分:秒） */
+    const parkedSec = parker.parkedAtTs ? Math.floor((now() - parker.parkedAtTs) / 1000)
+                                        : Math.floor((parker.parkAccrued || 0) / ((incPerMin || 1) / 60));
+    const fullSec = incPerMin > 0 ? Math.floor((cap / incPerMin) * 60) : 0;
+    const displaySec = (fullSec > 0 && parkedSec > fullSec) ? fullSec : parkedSec;
+    const m = Math.floor(displaySec / 60);
+    const s = displaySec % 60;
+    const timeStr = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 
     /* 更新停留时间文本 */
     const timeEl = card.querySelector('.fspot-park-time');
     if(timeEl) timeEl.textContent = `停留时间 ${timeStr}`;
 
-    /* 更新按钮状态（30分钟门槛） */
+    /* 更新按钮状态（始终显示「开罚单」，点击时校验30分钟门槛） */
     const isTicketed = !!parker.ticketed;
-    const canTicket = !isTicketed && parkedMins >= MIN_TICKET_MINUTES;
     const actionRow = card.querySelector('.fspot-action-row');
     if(!actionRow) return;
 
     const oldBtn = actionRow.querySelector('.fspot-ticket-btn, .fspot-ticketed-btn, .fspot-ticket-wait-btn');
     if(!oldBtn) return;
 
-    /* 仅在按钮状态需要变化时才替换 DOM（避免每秒重建） */
-    const isWaitBtn = oldBtn.classList.contains('fspot-ticket-wait-btn');
-    const isTicketBtn = oldBtn.classList.contains('fspot-ticket-btn');
     const isTicketedBtn = oldBtn.classList.contains('fspot-ticketed-btn');
 
     if(isTicketed && !isTicketedBtn){
       /* 应该变成已贴单 */
       oldBtn.outerHTML = `<button class="btn-ghost btn-sm fspot-ticketed-btn" disabled>已贴单</button>`;
-    } else if(canTicket && !isTicketBtn){
-      /* 可以开罚单 */
+    } else if(!isTicketed && !oldBtn.classList.contains('fspot-ticket-btn')){
+      /* 未贴单：始终显示可点击的「开罚单」按钮（不足30分钟点击时由 ticketFriend 拦截并提示） */
       oldBtn.outerHTML = `<button class="btn-primary btn-sm fspot-ticket-btn" data-action="ticket-friend" data-friend-uid="${parker.uid}" data-fspot="${fspotIdx}">开罚单</button>`;
-    } else if(!canTicket && !isTicketed && !isWaitBtn){
-      /* 倒计时中：显示剩余时间 */
-      const remainSec = Math.max(0, (MIN_TICKET_MINUTES - parkedMins) * 60);
-      const rm = Math.ceil(remainSec / 60); const rs = remainSec % 60;
-      oldBtn.outerHTML = `<button class="btn-ghost btn-sm fspot-ticket-wait-btn" disabled>${rm}:${String(rs).padStart(2,'0')}</button>`;
-    } else if(isWaitBtn && !isTicketed && !canTicket){
-      /* 更新倒计时数字 */
-      const remainSec = Math.max(0, (MIN_TICKET_MINUTES - parkedMins) * 60);
-      const rm = Math.ceil(remainSec / 60); const rs = remainSec % 60;
-      oldBtn.textContent = `${rm}:${String(rs).padStart(2,'0')}`;
     }
   });
 }
@@ -1781,21 +1767,12 @@ function refreshFspotGrid(){
       const pcar = CAR_BY_ID[fcarId];
       const pct = pcar ? clamp((parker.parkAccrued||0) / (pcar.capacity || 1) * 100, 0, 100) : 0;
       const isTicketed = !!parker.ticketed;
-      // 计算停车分钟数（与 ticketFriend 逻辑完全一致）
-      const incPerMin = pcar ? incomeOf({carId: pcar.id}) : 0;
-      const parkedMins = parker.parkedAtTs ? Math.floor((now() - parker.parkedAtTs) / 60000)
-                                           : Math.floor((parker.parkAccrued || 0) / (incPerMin || 1));
-      const canTicket = !isTicketed && parkedMins >= MIN_TICKET_MINUTES;
-      const remainSec = Math.max(0, (MIN_TICKET_MINUTES - parkedMins) * 60 - ((now() - parker.parkedAtTs || 0) % 60000));
-      // 按钮HTML：已贴单 / 可罚单 / 倒计时中（禁用）
+      // 按钮HTML：已贴单 / 开罚单（始终可点击，不足30分钟由点击处理函数拦截提示）
       let ticketBtnHtml;
       if(isTicketed){
         ticketBtnHtml = `<button class="btn-ghost btn-sm fspot-ticketed-btn" disabled>已贴单</button>`;
-      } else if(canTicket){
-        ticketBtnHtml = `<button class="btn-primary btn-sm fspot-ticket-btn" data-action="ticket-friend" data-friend-uid="${parker.uid}" data-fspot="${i}">开罚单</button>`;
       } else {
-        const rm = Math.ceil(remainSec / 60); const rs = remainSec % 60;
-        ticketBtnHtml = `<button class="btn-ghost btn-sm fspot-ticket-wait-btn" disabled>${rm}:${String(rs).padStart(2,'0')}</button>`;
+        ticketBtnHtml = `<button class="btn-primary btn-sm fspot-ticket-btn" data-action="ticket-friend" data-friend-uid="${parker.uid}" data-fspot="${i}">开罚单</button>`;
       }
       h += `<div class="park-card" data-fspot="${i}">
         ${pcar?`<div class="pc-rating-row">${ratingBadge(pcar.rating)}</div>`:''}
@@ -1823,7 +1800,7 @@ function refreshFspotGrid(){
   g.innerHTML = h;
 }
 
-// 格式化好友停车时长
+// 格式化好友停车时长（MM:SS）
 function formatParkTime(parker){
   if(!parker || parker.parkedAtMe === null || parker.parkedAtMe === undefined) return '--:--';
   // 优先用真实停车时刻 parkedAtTs 推算（与开罚单门槛一致），缺失时回退 accrued 反推
@@ -1832,23 +1809,21 @@ function formatParkTime(parker){
     const pcar = CAR_BY_ID[fcarId];
     const incPerMin = pcar ? incomeOf({carId: pcar.id}) : 0;
     const cap = pcar ? (pcar.capacity || 6300) : 6300;
-    let mins = Math.floor((now() - parker.parkedAtTs) / 60000);
-    const fullMin = incPerMin > 0 ? Math.floor(cap / incPerMin) : 0;
-    if(fullMin > 0 && mins > fullMin) mins = fullMin; // 满仓后停留时间停在此处（不再增长）
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    let secs = Math.floor((now() - parker.parkedAtTs) / 1000);
+    const fullSec = incPerMin > 0 ? Math.floor((cap / incPerMin) * 60) : 0;
+    if(fullSec > 0 && secs > fullSec) secs = fullSec; // 满仓后停留时间停在此处
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   }
-  // 简化：用 accrued 反推大致时间（每分钟收入 × 分钟 ≈ accrued）
+  // 简化：用 accrued 反推大致时间
   const fcarId = parker.parkCarId || parker.bestCarId;
   const pcar = CAR_BY_ID[fcarId];
   if(!pcar) return '--:--';
   const incPerMin = incomeOf({carId: pcar.id});
   if(incPerMin <= 0) return '00:00';
   const mins = Math.floor((parker.parkAccrued || 0) / incPerMin);
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  return `${String(mins).padStart(2,'0')}:00`;
 }
 
 /* ---------- 订购车锁广告 ---------- */
@@ -5537,7 +5512,7 @@ function ticketFriend(fridx, fidx){
   const incPerMin = pcar ? incomeOf({carId: pcar.id}) : totalIncomePerMin();
   const parkedMins = fr.parkedAtTs ? Math.floor((now() - fr.parkedAtTs) / 60000)
                                     : Math.floor((fr.parkAccrued || 0) / (incPerMin || 1));
-  if(parkedMins < MIN_TICKET_MINUTES){ toast('需要至少停留30分钟才可以开罚单'); return; }
+  if(parkedMins < MIN_TICKET_MINUTES){ toast('目标车辆停留时间不足30分钟，无法开罚单'); return; }
   // 罚金 = 该车已累积收益的 50%（窃取一半收益），按真实停车时长重新核算 accrued 以保证准确
   const cap = pcar ? (pcar.capacity || 6300) : 6300;
   const realAccrued = fr.parkedAtTs ? Math.min(incPerMin * (now() - fr.parkedAtTs) / 60000, cap)
