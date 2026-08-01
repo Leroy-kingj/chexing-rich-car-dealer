@@ -417,6 +417,11 @@ const SFX = (() => {
   function isMuted(){ return !!(S && S.soundOn === false); }
   return { play, unlock, setMuted, isMuted };
 })();
+
+// 好友车位解锁阈值：索引 i 对应的好友数门槛（0=默认已解锁，3/10/20 依次解锁第2/3/4位）
+// 注意：必须定义在 load() 之前（const 有 TDZ），否则 load() 内调用 checkFspotUnlock 会报未初始化
+const FSPOT_FRIEND_THRESHOLDS = [0, 3, 10, 20];
+
 function load(){
   try{
     const raw = localStorage.getItem(SAVE_KEY);
@@ -734,6 +739,7 @@ function load(){
     })();
 
     _uid = (Array.isArray(S.inst)?S.inst.length:0) + (Array.isArray(S.employees)?S.employees.length:0) + 200;
+    checkFspotUnlock();   // 每次载入存档后按当前好友数重新判定好友车位解锁（修复登录后云端重载不重判、达标仍锁的 bug）
     return true;
   }catch(e){ return false; }
 }
@@ -817,7 +823,7 @@ checkSevenDayStreak();
 
 /* ---------- 好友车位：按好友数自动解锁 ---------- */
 // 规范：好友数达3/10/20时依次解锁第2/3/4个好友车位
-const FSPOT_FRIEND_THRESHOLDS = [0, 3, 10, 20]; // 索引0=默认已解锁
+// 阈值常量 FSPOT_FRIEND_THRESHOLDS 已上移至 load() 之前定义（供 load() 内调用，避开 const TDZ）
 function checkFspotUnlock(){
   const fc = friendCount(); // isFriend 的好友数
   let changed = false;
@@ -830,8 +836,7 @@ function checkFspotUnlock(){
   });
   if(changed) save();
 }
-// 启动时检查
-checkFspotUnlock();
+// 启动时的好友车位解锁判定已并入 load() 末尾（覆盖登录后云端重载场景），此处不再重复调用
 
 /* ---------- DOM 快捷 ---------- */
 function toast(msg){ const t=$('#toast'); t.innerHTML=msg; t.classList.remove('hidden'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add('hidden'),2200); }

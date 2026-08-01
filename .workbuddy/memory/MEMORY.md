@@ -50,3 +50,9 @@
 - 每个版本改动完，用户下令"上传"即传；上传后**必须 `get_app_status` 查真实状态并如实汇报**（文案不可信，勿被"审核中"套话误导）。
 - 已上线应用反复上传更新不会反复进审核，放心传可测版——不要因"怕触发审核"迟迟不上传。
 - ⚠️ **【严重事故教训·2026-07-30】上传前必须 `get_current_app_info` 确认 selected app 是目标应用！** MCP 的 selected app 缓存在 `...\cache\<hash>\app.json`，**会被用户在别处操作（如打开另一款小游戏 895115 水果派对）静默切换**。本环境 server cwd 还指向旧项目「双响炮」，缓存曾先后变成 895240/895115——若直接 `upload_h5_game` 会把当前项目包**误传到错误应用**（已发生：把抢车位 h5-build 误传 895115 水果派对，使其进入审核中）。**标准安全流程：每次上传前先 `get_current_app_info` 核对 appId；不符则 `select_app(developer_id:430680, app_id:895103)` 切回，再 `prepare_h5_upload` 确认路径+app，最后 `upload_h5_game`。** 误传后无法自动撤销，只能由用户在错误应用后台手动撤回/重传。
+
+## ⚠️ 安全红线：不要向仓库提交真实凭证（2026-08-01 踩坑）
+- **GitHub secret scanning 会拦截 push**：若提交内容含明文 PAT/密钥（如 `ghp_...`），远端直接 `remote rejected ... push declined due to repository rule violations`，推送失败。
+- 本环境 `.workbuddy/memory/*.md` 笔记里**切勿粘贴真实 token**（2026-08-01 在 `2026-07-28.md` 误写用户提供的 GitHub PAT，首次 push 被拦；脱敏后 `git commit --amend` 重推才过）。
+- **知悉真实凭证时**：只用一次即焚，或写入本地 `.gitignore` 覆盖的文件 / 环境变量，**绝不写进会被 commit 的源码或笔记**。一旦误提交：① 立即作废该凭证（GitHub → Settings → Developer settings → PAT 撤销）；② 从提交的文件中脱敏并 `commit --amend`（未推）或历史改写（已推需 force push，谨慎）。
+- Push 命令走 SSH deploy key（见上「构建/推送方式」），本就不需要 PAT；下载 APK 构件才需 PAT，下载完即作废。

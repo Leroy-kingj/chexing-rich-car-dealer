@@ -40,6 +40,7 @@ const ChexingSDK = (() => {
   // 任何一处命中即视为 TapTap 环境就绪。
   let tap = null;                 // 缓存探测到的 TapTap 桥接对象（IIFE 作用域，避免依赖外部裸变量）
   let isTapMiniGame = false;      // 由 tap 探测结果驱动
+  let _rewardAdBusy = false;      // 激励视频防重复拉起锁（防止连点 / SDK 复用实例导致广告反复弹出）
 
   function _resolveTapSource() {
     try { if (typeof window !== 'undefined' && window.tap) return window.tap; } catch (e) {}
@@ -226,18 +227,29 @@ const ChexingSDK = (() => {
         toast('广告位未配置，暂不能观看广告');
         return { success: false, msg: 'ad_unit_not_configured' };
       }
+      if (_rewardAdBusy) {
+        toast('广告正在播放中，请稍候…');
+        return { success: false, msg: 'ad_busy' };
+      }
+      _rewardAdBusy = true;
       return new Promise((resolve) => {
+        let settled = false;
+        let shown = false; // 防止 onLoad 重复触发导致广告反复自动拉起
+        const finish = (r) => {
+          _rewardAdBusy = false;
+          if (!settled) { settled = true; resolve(r); }
+        };
         try {
           const ad = tap.createRewardedVideoAd({ adUnitId: unit });
-          let settled = false;
-          const done = (r) => { if (!settled) { settled = true; resolve(r); } };
           ad.onLoad(() => {
             log('rewarded video ad loaded');
-            ad.show().catch(e => done({ success: false, msg: 'ad_show_failed:' + (e?.errMsg || e?.message || e) }));
+            if (shown) return; // 已展示过则不再二次拉起（修复：退出后反复自动打开广告）
+            shown = true;
+            ad.show().catch(e => finish({ success: false, msg: 'ad_show_failed:' + (e?.errMsg || e?.message || e) }));
           });
           ad.onError(err => {
             warn('rewarded video ad error:', err);
-            done({ success: false, msg: 'ad_error:' + (err?.errMsg || err?.message || String(err)) });
+            finish({ success: false, msg: 'ad_error:' + (err?.errMsg || err?.message || String(err)) });
           });
           // 显式加载：TapTap 激励视频需先 load() 才会触发 onLoad 并弹出广告
           ad.load();
@@ -245,10 +257,13 @@ const ChexingSDK = (() => {
             // res.isEnded === false 表示中途关闭（未看完）；未定义按看完处理
             const finished = !(res && res.isEnded === false);
             log('rewarded video ad close, finished:', finished);
-            done(finished ? { success: true, msg: 'ad_watched' } : { success: false, msg: 'ad_not_finished' });
+            // 解绑并销毁实例，避免 TapTap 复用该实例时 onLoad 再次自动拉起广告
+            try { ad.offLoad && ad.offLoad(); ad.offClose && ad.offClose(); ad.offError && ad.offError(); ad.destroy && ad.destroy(); } catch (_) {}
+            finish(finished ? { success: true, msg: 'ad_watched' } : { success: false, msg: 'ad_not_finished' });
           });
         } catch (e) {
           warn('createRewardedVideoAd exception:', e);
+          _rewardAdBusy = false;
           resolve({ success: false, msg: e.message || 'ad_exception' });
         }
       });
