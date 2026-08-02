@@ -235,37 +235,50 @@ const ChexingSDK = (() => {
       return new Promise((resolve) => {
         let settled = false;
         let shown = false; // 防止 onLoad 重复触发导致广告反复自动拉起
+        let ad;
+        // 具名 handler：TapTap/微信激励视频的 offLoad/offClose/offError 必须传【原引用】才能真正解绑，
+        // 无参调用在多数版本是 no-op，会导致监听器跨调用累积，复用时 onLoad 再次拉起广告（关了又打开）。
+        let onLoadH, onErrH, onCloseH;
+        const cleanup = () => {
+          try { if (onLoadH) ad.offLoad(onLoadH); } catch (_) {}
+          try { if (onCloseH) ad.offClose(onCloseH); } catch (_) {}
+          try { if (onErrH) ad.offError(onErrH); } catch (_) {}
+          try { if (ad.destroy) ad.destroy(); } catch (_) {}
+        };
         const finish = (r) => {
           _rewardAdBusy = false;
+          cleanup();
           if (!settled) { settled = true; resolve(r); }
         };
         try {
-          const ad = tap.createRewardedVideoAd({ adUnitId: unit });
-          ad.onLoad(() => {
-            log('rewarded video ad loaded');
-            if (shown) return; // 已展示过则不再二次拉起（修复：退出后反复自动打开广告）
-            shown = true;
-            ad.show().catch(e => finish({ success: false, msg: 'ad_show_failed:' + (e?.errMsg || e?.message || e) }));
-          });
-          ad.onError(err => {
-            warn('rewarded video ad error:', err);
-            finish({ success: false, msg: 'ad_error:' + (err?.errMsg || err?.message || String(err)) });
-          });
-          // 显式加载：TapTap 激励视频需先 load() 才会触发 onLoad 并弹出广告
-          ad.load();
-          ad.onClose(res => {
-            // res.isEnded === false 表示中途关闭（未看完）；未定义按看完处理
-            const finished = !(res && res.isEnded === false);
-            log('rewarded video ad close, finished:', finished);
-            // 解绑并销毁实例，避免 TapTap 复用该实例时 onLoad 再次自动拉起广告
-            try { ad.offLoad && ad.offLoad(); ad.offClose && ad.offClose(); ad.offError && ad.offError(); ad.destroy && ad.destroy(); } catch (_) {}
-            finish(finished ? { success: true, msg: 'ad_watched' } : { success: false, msg: 'ad_not_finished' });
-          });
+          ad = tap.createRewardedVideoAd({ adUnitId: unit });
         } catch (e) {
-          warn('createRewardedVideoAd exception:', e);
           _rewardAdBusy = false;
+          warn('createRewardedVideoAd exception:', e);
           resolve({ success: false, msg: e.message || 'ad_exception' });
+          return;
         }
+        onLoadH = () => {
+          log('rewarded video ad loaded');
+          if (shown) return; // 已展示过则不再二次拉起（修复：退出后反复自动打开广告）
+          shown = true;
+          ad.show().catch(e => finish({ success: false, msg: 'ad_show_failed:' + (e?.errMsg || e?.message || e) }));
+        };
+        onErrH = (err) => {
+          warn('rewarded video ad error:', err);
+          finish({ success: false, msg: 'ad_error:' + (err?.errMsg || err?.message || String(err)) });
+        };
+        onCloseH = (res) => {
+          // res.isEnded === false 表示中途关闭（未看完）；未定义按看完处理
+          const finished = !(res && res.isEnded === false);
+          log('rewarded video ad close, finished:', finished);
+          finish(finished ? { success: true, msg: 'ad_watched' } : { success: false, msg: 'ad_not_finished' });
+        };
+        ad.onLoad(onLoadH);
+        ad.onError(onErrH);
+        ad.onClose(onCloseH);
+        // 显式加载：TapTap 激励视频需先 load() 才会触发 onLoad 并弹出广告
+        ad.load();
       });
     }
     // ===== Capacitor 原生环境 =====

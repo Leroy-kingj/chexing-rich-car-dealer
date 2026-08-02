@@ -41,7 +41,7 @@ input { font-family: inherit; }
   @media (orientation: landscape) {
     html { transform: rotate(0deg) !important; transform-origin: center; }
     body { max-width: 100vw !important; overflow-x: hidden !important; }
-    #screen, #homeview, #app { max-width: 100vw !important; }
+    #screen, #homeview, #app, #loading { max-width: 100vw !important; }
   }
 }
 
@@ -51,21 +51,51 @@ input { font-family: inherit; }
 .hidden { display: none !important; }
 
 /* ---------- A01 登录/启动页 ---------- */
-#loading { justify-content: center; align-items: center; position: relative; overflow: hidden; }
+#loading { justify-content: center; align-items: center; position: relative; overflow: hidden; max-width: 100vw; background: #0c1a2e; }
+/* 顶部渐变填充区：用登录图顶部色带平铺，覆盖 contain 模式留下的上方空白 */
+#loading::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 35%; z-index: 0;
+  background: url('../assets/login_header_gradient.png') repeat-x top center;
+  background-size: auto 100%;
+}
 .login-bg { position: absolute; inset: 0; z-index: 0; }
-.login-bg img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
-.login-content { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; padding: 20px; margin-top: auto; margin-bottom: 10px; }
+.login-bg img { width: 100%; height: 100%; object-fit: contain; object-position: center bottom; }
+.login-content { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; padding: 20px 24px; padding-bottom: env(safe-area-inset-bottom, 20px); margin-top: 62vh; max-width: 420px; width: 100%; box-sizing: border-box; }
 .login-title { font-size: 26px; font-weight: 900; color: #ffd66b; text-shadow: 0 2px 12px rgba(0,0,0,.6), 0 0 30px rgba(255,180,50,.3); letter-spacing: 3px; margin-bottom: 6px; }
 .login-subtitle { font-size: 13px; color: rgba(255,255,255,.85); text-shadow: 0 1px 6px rgba(0,0,0,.5); margin-bottom: 36px; letter-spacing: 1px; }
 .login-taptap-btn { display: flex; align-items: center; gap: 8px; background: linear-gradient(135deg,#ff6a3d,#ff4d4d); color: #fff; border: none; border-radius: 24px; padding: 12px 36px; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 16px rgba(255,77,77,.45), 0 0 0 1px rgba(255,255,255,.15) inset; transition: all .2s; letter-spacing: 1px; }
 .login-taptap-btn:active { transform: scale(.96); box-shadow: 0 2px 8px rgba(255,77,77,.35), 0 0 0 1px rgba(255,255,255,.15) inset; }
 .login-btn-icon { font-size: 18px; }
-.login-skip { margin-top: 10px; margin-bottom: 4px; color: rgba(255,255,255,.8); font-size: 12px; cursor: pointer; padding: 4px 12px; border-radius: 10px; transition: all .15s; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+.login-skip { margin-top: 14px; margin-bottom: 8px; color: rgba(255,255,255,.8); font-size: 12px; cursor: pointer; padding: 4px 12px; border-radius: 10px; transition: all .15s; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
 .login-skip:active { color: #fff; background: rgba(255,255,255,.15); }
-.login-footer { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; font-size: 11px; color: rgba(255,255,255,.7); letter-spacing: 1px; z-index: 1; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+.login-footer { margin-top: 6px; text-align: center; font-size: 11px; color: rgba(255,255,255,.7); letter-spacing: 1px; z-index: 1; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
 .login-loading { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #fff; font-size: 14px; }
 .login-spinner { width: 32px; height: 32px; border: 3px solid rgba(255,255,255,.25); border-top-color: #ff6a3d; border-radius: 50%; animation: loginSpin .8s linear infinite; }
 @keyframes loginSpin { to { transform: rotate(360deg); } }
+
+/* ---------- 飘字提示（夺宝获得货币等） ---------- */
+.float-gain {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  z-index: 99999;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 900;
+  font-size: 20px;
+  color: #34d399;
+  text-shadow: 0 2px 8px rgba(0,0,0,.7);
+  white-space: nowrap;
+  animation: floatGainUp 1.25s cubic-bezier(.22,.61,.36,1) forwards;
+}
+.float-gain .dollar-ic { width: 22px; height: 22px; vertical-align: middle; }
+@keyframes floatGainUp {
+  0%   { opacity: 0; transform: translate(-50%, -30%) scale(.6); }
+  15%  { opacity: 1; transform: translate(-50%, -65%) scale(1.12); }
+  100% { opacity: 0; transform: translate(-50%, -170%) scale(1); }
+}
 
 /* ---------- #game 主容器 ---------- */
 #game { display: none; flex-direction: column; height: 100%; }
@@ -92,6 +122,8 @@ input { font-family: inherit; }
 .res-avatar::after { content: ''; position: absolute; width: 18px; height: 10px; border-radius: 10px 10px 0 0; background: var(--accent); bottom: 7px; left: 50%; transform: translateX(-50%); opacity: .6; }
 /* 有真实头像时隐藏CSS默认图标 */
 .res-avatar.has-real-avatar::before, .res-avatar.has-real-avatar::after { display: none; }
+/* 有真实头像时隐藏默认👤emoji，避免与图片重叠 */
+.res-avatar.has-real-avatar .res-avatar-emoji { display: none; }
 .res-item { display: flex; align-items: center; gap: 3px; background: linear-gradient(135deg,#fefefe,#f8f9fa); border-radius: 18px; padding: 4px 8px 4px 4px; flex: 1; min-width: 0; box-shadow: var(--shadow-sm); }
 .res-ic { font-size: 14px; }
 /* 黄金货币统一图标（金元宝） */
@@ -1147,6 +1179,19 @@ input { font-family: inherit; }
 .nf-section { padding: 10px 12px; text-align: center; }
 .nf-header { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
 .nf-desc { font-size: 12px; margin-bottom: 6px; }
+/* 我的ID（告诉车友来搜索）*/
+.nf-myid { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px 6px 3px 12px; margin-bottom: 6px; }
+.nf-myid b { color: var(--gold); letter-spacing: .5px; }
+.nf-copy-btn { font-size: 11px; padding: 2px 10px; border-radius: 999px; border: none; cursor: pointer;
+  background: var(--blue); color: #fff; font-weight: 800; }
+/* 真实 TapTap 玩家标记 */
+.nf-tap-badge { display: inline-block; margin-left: 5px; font-size: 10px; font-weight: 800; padding: 1px 5px;
+  border-radius: 4px; background: rgba(45,190,120,.18); color: #2dbe78; border: 1px solid rgba(45,190,120,.4); vertical-align: middle; }
+/* 排行榜空态/加载提示 */
+.rank-empty-tip { padding: 22px 16px; text-align: center; font-size: 13px; color: var(--mut); line-height: 1.7; }
+/* 排行榜真实玩家头像 */
+.rk-avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .nf-count-chip { display: inline-block; font-size: 12px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; margin-bottom: 6px; }
 .nf-count-chip b { color: var(--gold); }
 .nf-count-chip.full b { color: #ff4d4f; }

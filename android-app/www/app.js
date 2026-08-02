@@ -354,7 +354,16 @@ function initTaocheState(){
 }
 
 /* ---------- 存档 ---------- */
-function save(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} }
+function save(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){}
+  try{ trySubmitLeaderboard(); }catch(_){}
+  // 云存档：TapTap 环境且已登录时异步同步（失败静默，不阻塞游戏）。节流 60s 在 SDK 内部处理。
+  try{
+    if(window.ChexingSDK && window.ChexingSDK.isTapMiniGame && S.taptap){
+      window.ChexingSDK.saveToCloud(S);
+    }
+  }catch(_){}
+}
 
 /* ==================== 音效系统（Web Audio 程序化合成，无需素材文件） ==================== */
 /* 说明：使用 Oscillator 实时合成音效，在 Android WebView 下零延迟、无加载/素材依赖、可离线运行。
@@ -408,6 +417,11 @@ const SFX = (() => {
   function isMuted(){ return !!(S && S.soundOn === false); }
   return { play, unlock, setMuted, isMuted };
 })();
+
+// 好友车位解锁阈值：索引 i 对应的好友数门槛（0=默认已解锁，3/10/20 依次解锁第2/3/4位）
+// 注意：必须定义在 load() 之前（const 有 TDZ），否则 load() 内调用 checkFspotUnlock 会报未初始化
+const FSPOT_FRIEND_THRESHOLDS = [0, 3, 10, 20];
+
 function load(){
   try{
     const raw = localStorage.getItem(SAVE_KEY);
@@ -725,6 +739,7 @@ function load(){
     })();
 
     _uid = (Array.isArray(S.inst)?S.inst.length:0) + (Array.isArray(S.employees)?S.employees.length:0) + 200;
+    checkFspotUnlock();   // 每次载入存档后按当前好友数重新判定好友车位解锁（修复登录后云端重载不重判、达标仍锁的 bug）
     return true;
   }catch(e){ return false; }
 }
@@ -808,7 +823,7 @@ checkSevenDayStreak();
 
 /* ---------- 好友车位：按好友数自动解锁 ---------- */
 // 规范：好友数达3/10/20时依次解锁第2/3/4个好友车位
-const FSPOT_FRIEND_THRESHOLDS = [0, 3, 10, 20]; // 索引0=默认已解锁
+// 阈值常量 FSPOT_FRIEND_THRESHOLDS 已上移至 load() 之前定义（供 load() 内调用，避开 const TDZ）
 function checkFspotUnlock(){
   const fc = friendCount(); // isFriend 的好友数
   let changed = false;
@@ -821,11 +836,28 @@ function checkFspotUnlock(){
   });
   if(changed) save();
 }
-// 启动时检查
-checkFspotUnlock();
+// 启动时的好友车位解锁判定已并入 load() 末尾（覆盖登录后云端重载场景），此处不再重复调用
 
 /* ---------- DOM 快捷 ---------- */
 function toast(msg){ const t=$('#toast'); t.innerHTML=msg; t.classList.remove('hidden'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add('hidden'),2200); }
+// 通用飘字：在指定锚点上方显示「刀乐+{num}」类提示并向上飘出淡出
+// anchor：元素 / 选择器 / 缺省则屏幕中心
+function showFloatGain(html, anchor){
+  let rect;
+  if(!anchor) rect = { left: innerWidth/2, top: innerHeight*0.4, width: 0, height: 0 };
+  else {
+    const el = (typeof anchor === 'string') ? $(anchor) : anchor;
+    if(!el || !el.getBoundingClientRect) return;
+    rect = el.getBoundingClientRect();
+  }
+  const f = document.createElement('div');
+  f.className = 'float-gain';
+  f.innerHTML = html;
+  f.style.left = (rect.left + rect.width/2) + 'px';
+  f.style.top = (rect.top + rect.height/2) + 'px';
+  document.body.appendChild(f);
+  setTimeout(()=>{ if(f && f.parentNode) f.parentNode.removeChild(f); }, 1300);
+}
 function ask(text, onOk){
   $('#confirm-text').innerHTML=text; $('#confirm').classList.remove('hidden');
   const ok=$('#confirm-ok'), cx=$('#confirm-cancel');
@@ -1088,6 +1120,31 @@ function freeSpotIdx(){
 }
 function instAtSpot(idx){ return S.inst.find(i=>i.loc==='spot' && i.spotIdx===idx); }
 
+/* 离线收益补偿：游戏重新打开（关掉页面 / 后台被杀 / 长时间后台）时，
+   按真实离线时长补足玩家自有车（停在自家 spot / 好友家 atFriend）的收益。
+   修复 bug：原 tick 的 dt 封顶 300s，关掉游戏再打开只补 5 分钟，
+   离线更长则收益丢失，表现为"游戏不在线时停车进度不涨"。
+   说明：每辆车按 capOf 封顶（与好友车真实时长累积逻辑一致），离线再久也只填满不溢出。 */
+function applyOfflineProgress(){
+  const t = now();
+  const last = (typeof S.lastTick === 'number' && !isNaN(S.lastTick)) ? S.lastTick : t;
+  const elapsedSec = Math.max(0, (t - last) / 1000);
+  S.lastTick = t; // 立即推进，避免紧随其后的首次 live tick 用大 dt 重复累加
+  if(elapsedSec < 1) return; // 几乎没离线，跳过
+  let gained = 0;
+  S.inst.forEach(inst=>{
+    if(inst.loc !== 'spot' && inst.loc !== 'atFriend') return;
+    const cap = capOf(inst);
+    const before = inst.accrued || 0;
+    const inc = incomeOf(inst) * elapsedSec / 60;
+    const after = Math.min(before + inc, cap);
+    gained += (after - before);
+    inst.accrued = after;
+  });
+  gained = Math.floor(gained);
+  if(gained > 0) toast(`离线收益 +${f(gained)} 刀乐`);
+}
+
 /* ========== Tick 核心 ========== */
 function tick(){
   const t = now();
@@ -1217,6 +1274,9 @@ function enterGame(){
   const sb = $('#tb-sound'); if(sb) sb.textContent = SFX.isMuted() ? '🔇' : '🔊';
   go('home');
 
+  // 离线收益补偿：按真实离线时长补足玩家自有车收益（修复"离线不涨"bug），放在 tick 循环启动前
+  applyOfflineProgress();
+
   // 启动 tick 循环
   setInterval(tick, TICK_MS);
   tick();
@@ -1228,32 +1288,78 @@ function enterGame(){
   syncInviteRewards();
 }
 
+/**
+ * 登录成功后统一入口：先尝试从云端拉取存档（跨设备 / 防清档），
+ * 写入本地后重新水合 + 版本迁移，最后进入游戏。
+ * 这样即使本地存档被清，只要登录同一 TapTap 账号，云端存档即可恢复。
+ */
+async function proceedAfterLogin(){
+  if(window.ChexingSDK && window.ChexingSDK.isTapMiniGame){
+    try{
+      const r = await window.ChexingSDK.loadFromCloud();
+      if(r && r.success && r.data){
+        try{ localStorage.setItem(SAVE_KEY, JSON.stringify(r.data)); }catch(e){}
+        load();                    // 重新水合并执行版本迁移
+      } else {
+        load();                    // 云端无存档：确保本地存档可用（首次游玩则为默认新档）
+      }
+    }catch(e){ console.warn('[proceedAfterLogin] 云存档拉取失败，回退本地:', e); load(); }
+  } else {
+    load();                        // 浏览器调试环境：本地加载即可
+  }
+  // 默认使用 TapTap 账号名称作为玩家名（玩家尚未主动自定义过名字时）
+  if (S.taptap && S.taptap.name && !(S.renameCount > 0)) {
+    S.name = S.taptap.name;
+  }
+  save();                          // 本地 + 云端持久化（首次落云）
+  enterGame();
+  // 后台补全真实 TapTap 身份（openid/昵称/头像 + UID 绑定 + 防沉迷），不阻塞进入游戏
+  resolveTapIdentity();
+}
+
 function boot(){
+  // 安全获取 ChexingSDK（兼容 window / GameGlobal 等多种运行时，避免 SDK 缺失时整段崩溃）
+  const CX = (typeof window !== 'undefined' && window.ChexingSDK) ? window.ChexingSDK
+           : (typeof GameGlobal !== 'undefined' && GameGlobal.ChexingSDK) ? GameGlobal.ChexingSDK
+           : (typeof globalThis !== 'undefined' && globalThis.ChexingSDK) ? globalThis.ChexingSDK
+           : null;
+
   // 登录页已默认显示（#loading active），不需要隐藏
 
-  // 初始化 TapTap SDK（后台静默初始化，不阻塞登录页）
-  if(window.ChexingSDK && window.ChexingSDK.isNative){
-    window.ChexingSDK.initAd({ appId: 'taptap', adUnitId: 'reward_video' }).then(r => {
+  // ⚠️ TapTap 环境检测必须是【动态】的：tap 由容器异步注入，SDK 内部已做多源探测+自愈合。
+  const initTapEnv = () => {
+    if (boot._tapReady) return;   // 只初始化一次
+    boot._tapReady = true;
+    // TapTap 环境：强制登录 —— 永久隐藏"跳过登录"，不给任何绕过入口
+    const skipEl = document.querySelector('.login-skip');
+    if (skipEl) skipEl.remove();
+
+    if (!CX) return;              // 无 SDK 则跳过初始化（不影响页面展示）
+    // 初始化 TapTap SDK（后台静默，不阻塞登录页）
+    CX.initAd({ appId: 'taptap', adUnitId: 'reward_video' }).then(r => {
       console.log('[ChexingSDK] Ad initialized:', r);
-      window.ChexingSDK.preloadAd();
-    }).catch(e => {
-      console.warn('[ChexingSDK] Ad init failed:', e);
+      CX.preloadAd();
+    }).catch(e => console.warn('[ChexingSDK] Ad init failed:', e));
+    CX.initLogin().catch(e => console.warn('[ChexingSDK] Login init failed:', e));
+    CX.checkLicense().catch(e => console.warn('[ChexingSDK] License check failed:', e));
+    CX.checkUpdate().catch(e => console.warn('[ChexingSDK] Update check failed:', e));
+
+    autoLogin();                  // ⭐ 进入登录页即自动登录（检测到账号直接进游戏）
+  };
+
+  if (CX && CX.isTapEnv) {
+    initTapEnv();                                   // 同步就绪：立即初始化
+  } else if (CX && CX.onTapReady) {
+    CX.onTapReady(() => {                            // 异步就绪：tap 注入后回调
+      if (CX && CX.isTapEnv) initTapEnv();
     });
-    window.ChexingSDK.initLogin().catch(e => {
-      console.warn('[ChexingSDK] Login init failed:', e);
+  }
+  // 确认非 TapTap 环境（探测 ~12s 超时）后才放出"跳过登录"，仅供浏览器调试
+  if (CX && CX.onTapUnavailable) {
+    CX.onTapUnavailable(() => {
+      const skipEl = document.querySelector('.login-skip');
+      if (skipEl) skipEl.style.display = '';
     });
-    if(S.taptap){
-      ttComplianceStart();
-      // 已有登录态，1.5s后自动进入游戏（用户可看到splash后自动进入）
-      setTimeout(enterGame, 1500);
-    } else {
-      // 未登录，等待用户操作
-    }
-    window.ChexingSDK.checkLicense().catch(e => console.warn('[ChexingSDK] License check failed:', e));
-    window.ChexingSDK.checkUpdate().catch(e => console.warn('[ChexingSDK] Update check failed:', e));
-  } else {
-    // 非原生环境（浏览器调试），显示登录页但允许跳过
-    // 3秒后如果未操作则提示可跳过
   }
 
   // 调试钩子（仅供自动化测试访问内部状态/函数）
@@ -1286,7 +1392,9 @@ function boot(){
     // 分享系统
     shareGame,
     // TapTap 登录
-    tapLogin, tapLogout,
+    tapLogin, tapLogout, autoLogin, resolveTapIdentity, uidFromOpenid,
+    // TapTap 真实玩家池
+    fetchTapPlayers, findTapPlayer, findAnyPlayer, tapPool: () => TAP_PLAYER_POOL,
     // TapTap 七大功能模块
     ttReview, ttShareToTapTap, ttOpenLeaderboard, ttShowAchievements, ttCheckUpdate, ttCheckLicense, ttComplianceStart,
     // SDK
@@ -1296,6 +1404,12 @@ function boot(){
 
 // 页面关闭/刷新前强制保存（防止安排员工等操作后因时序问题丢失 empIid 等字段）
 window.addEventListener('beforeunload', () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch(e){} });
+// 页面隐藏（切后台/锁屏/关闭）前尽量把最新进度同步到云端（节流 60s，失败静默）
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    try { if (window.ChexingSDK && window.ChexingSDK.isTapMiniGame && S.taptap) window.ChexingSDK.saveToCloud(S, true); } catch (_) {}
+  }
+});
 
 // 页面加载后启动
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
@@ -1939,7 +2053,7 @@ function renderProfile(){
         </div>
       <div class="uip-body">
         <div class="uip-top-row">
-          <div class="uip-avatar">👤</div>
+          <div class="uip-avatar">${S.avatar ? `<img src="${S.avatar}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : '👤'}</div>
           <div class="uip-stats-col">
             <div class="uip-stat-row"><span class="uip-stat-icon">🏆</span>身价：<b>${f(networth())}</b></div>
             <div class="uip-stat-row"><span class="uip-stat-icon">${ASSET_IC}</span>资产：<b>${f(assets())}</b></div>
@@ -1952,18 +2066,6 @@ function renderProfile(){
           </button>
         </div>
         <div class="uip-uid">UID：${S.uid} ${S.taptap ? '<span class="uip-tt-badge" title="TapTap 已登录">✓</span>' : ''}</div>
-        ${(window.ChexingSDK && window.ChexingSDK.isNative) ? `
-        <div class="uip-tt-services">
-          <div class="uip-tt-services-title">TapTap 服务</div>
-          <div class="uip-tt-service-grid">
-            <button class="uip-tt-svc-btn" data-action="tt-review">⭐ 去评价</button>
-            <button class="uip-tt-svc-btn" data-action="tt-share">📤 分享游戏</button>
-            <button class="uip-tt-svc-btn" data-action="tt-leaderboard">🏆 排行榜</button>
-            <button class="uip-tt-svc-btn" data-action="tt-achievements">🎖️ 我的成就</button>
-            <button class="uip-tt-svc-btn" data-action="tt-check-update">🔄 检查更新</button>
-            <button class="uip-tt-svc-btn" data-action="tt-check-license">✅ 正版验证</button>
-          </div>
-        </div>` : ``}
         <div class="uip-boss-row">
           <div class="uip-boss-cell">
             <div class="uip-boss-label">现任老板</div>
@@ -1993,33 +2095,169 @@ function renderProfile(){
 }
 
 /* ==================== TapTap 登录 ==================== */
+/** 登录页 loading 态开关 */
+function setLoginBusy(busy, text){
+  const btn = $('#login-btn');
+  const loadingEl = $('#login-loading');
+  if(btn) btn.disabled = !!busy;
+  if(loadingEl){
+    loadingEl.classList.toggle('hidden', !busy);
+    if(text){ const sp = loadingEl.querySelector('span'); if(sp) sp.textContent = text; }
+  }
+}
+
+/**
+ * 进入登录页后的【自动登录】（强制登录的核心）：
+ *   1) 本地已有登录态 且 tap.checkSession 判定会话仍有效 → 免登录直接进游戏
+ *   2) 否则静默拉起 tap.login()（小游戏容器内玩家已登录 TapTap 客户端账号，通常无需二次确认）
+ *   3) 失败则停留登录页，把按钮文案改为「重新登录」，绝不放行游客
+ */
+async function autoLogin(){
+  const CX = window.ChexingSDK;
+  if(!CX || !CX.isTapMiniGame) return;   // 仅 TapTap 小游戏环境自动登录
+  if(gameStarted || autoLogin._running) return;
+  autoLogin._running = true;
+  setLoginBusy(true, '正在自动登录 TapTap...');
+  try{
+    if(S.taptap){
+      const alive = await CX.checkSession();
+      if(alive){
+        console.log('[autoLogin] TapTap 会话有效，免登录进入');
+        proceedAfterLogin();
+        return;
+      }
+      console.log('[autoLogin] TapTap 会话已过期，重新静默登录');
+    }
+    await tapLogin({ silent:true });
+  }catch(e){
+    console.warn('[autoLogin] 异常：', e);
+  }finally{
+    autoLogin._running = false;
+    if(!gameStarted) setLoginBusy(false);
+  }
+}
+
+/**
+ * 用 TapTap openid 稳定派生 8 位玩家 UID。
+ * 意义：① 跨设备/重装后 UID 不变；② 其他玩家能用这个 UID 搜索到你。
+ * 取值区间 40000000~99999999，避开机器人(1000xxxx)、内置玩家(2000xxxx)、历史迁移(30xxxxxx)。
+ */
+function uidFromOpenid(openid){
+  const s = String(openid || '');
+  let h = 5381;
+  for(let i=0;i<s.length;i++) h = ((h*33) ^ s.charCodeAt(i)) >>> 0;
+  // 雪崩混合（murmur3 finalizer）：避免相似 openid 派生出相邻 UID，降低碰撞与可猜测性
+  // ⚠️ 每一步都要 >>>0 转回无符号：^ 运算返回有符号 32 位，负数取模会得到负 UID
+  h = ((h ^ (h >>> 16)) >>> 0); h = Math.imul(h, 2246822507) >>> 0;
+  h = ((h ^ (h >>> 13)) >>> 0); h = Math.imul(h, 3266489909) >>> 0;
+  h = ((h ^ (h >>> 16)) >>> 0);
+  return 40000000 + (h % 60000000);
+}
+
+/** TapTap Image 对象 → 头像 URL（兼容直接给字符串的情况） */
+function tapAvatarUrl(av){
+  if(!av) return null;
+  if(typeof av === 'string') return av;
+  return av.smallUrl || av.mediumUrl || av.url || av.originalUrl || null;
+}
+
+/**
+ * 把玩家自身 UID 改为 newUid，并同步存档内所有指向自己的引用，
+ * 避免雇佣关系/身价贡献因换 UID 而断裂（与 load() 里的 UID 归一化迁移同源）。
+ */
+function remapSelfUid(newUid){
+  const oldUid = S.uid;
+  if(oldUid === newUid) return;
+  S.uid = newUid;
+  (S.employees||[]).forEach(emp => {
+    if(emp == null || typeof emp !== 'object') return;
+    if(emp.hiredFrom === oldUid) emp.hiredFrom = newUid;
+    if(emp.topHirerUid === oldUid) emp.topHirerUid = newUid;
+    if(emp.employedBy === oldUid) emp.employedBy = newUid;
+    if(emp.nwContributors && typeof emp.nwContributors === 'object' && oldUid in emp.nwContributors){
+      emp.nwContributors[newUid] = emp.nwContributors[oldUid];
+      delete emp.nwContributors[oldUid];
+    }
+  });
+  (S.friends||[]).forEach(fr => { if(fr && fr.employedBy === oldUid) fr.employedBy = newUid; });
+  if(S.employedBy === oldUid) S.employedBy = newUid;
+  console.log('[UID] 已绑定 TapTap 账号：', oldUid, '→', newUid);
+}
+
+/**
+ * 补全真实 TapTap 身份（openid / 昵称 / 头像）。
+ * ⚠️ 关键：tap.login() 只返回 code，前端拿不到 openid（官方要求后端 code2Session）。
+ *    本项目无后端，改走排行榜 API —— submitScores 的返回体与 loadCurrentPlayerLeaderboardScore
+ *    都会回传当前玩家的真实 openid / unionid / 昵称 / 头像，这是纯前端拿到真实身份的唯一途径。
+ * 拿到 openid 后：绑定玩家 UID（跨设备一致、可被他人搜索）+ 启动防沉迷合规。
+ */
+async function resolveTapIdentity(){
+  const CX = window.ChexingSDK;
+  if(!CX || !CX.isTapMiniGame || !S.taptap) return;
+  if(!TAPTAP_LB_ASSETS) return;
+  try{
+    // 1) 提交一次分数 → 返回 results[0].openid / unionid
+    const sub = await CX.submitLeaderboardScore(TAPTAP_LB_ASSETS, Math.floor(Number(S.dollars)||0));
+    if(sub && sub.success && sub.openid){
+      S.taptap.openid = sub.openid;
+      S.taptap.unionid = sub.unionid || S.taptap.unionid || null;
+    }
+    // 2) 读回自己的榜单记录 → 拿真实昵称/头像（无需 scope.userInfo 授权弹窗）
+    const cur = await CX.loadCurrentPlayerScore({ leaderboardId: TAPTAP_LB_ASSETS });
+    if(cur && cur.success && cur.user){
+      if(cur.user.openid)  S.taptap.openid  = cur.user.openid;
+      if(cur.user.unionid) S.taptap.unionid = cur.user.unionid;
+      if(cur.user.name)    S.taptap.name    = cur.user.name;
+      const av = tapAvatarUrl(cur.user.avatar);
+      if(av) S.taptap.avatar = av;
+    }
+    if(!S.taptap.openid){
+      console.warn('[resolveTapIdentity] 未能取得 openid（排行榜可能未发布或网络异常）');
+      return;
+    }
+    // 3) UID 绑定 TapTap 账号
+    remapSelfUid(uidFromOpenid(S.taptap.openid));
+    // 4) 昵称/头像同步（玩家未主动改过名时用 TapTap 账号信息）
+    if(S.taptap.name && !(S.renameCount > 0)) S.name = S.taptap.name;
+    if(S.taptap.avatar && !S.avatar) S.avatar = S.taptap.avatar;
+    save();
+    ttComplianceStart();          // 有真实 openid 后才能正确启动防沉迷
+    try{ updateHUD(); }catch(e){}
+    console.log('[resolveTapIdentity] 身份就绪：', S.taptap.name, S.uid);
+  }catch(e){
+    console.warn('[resolveTapIdentity] 失败：', e);
+  }
+}
+
 /**
  * 登录页上的 TapTap 登录按钮（显示loading状态）
  */
 function splashTapLogin(){
-  const btn = $('#login-btn');
-  const loadingEl = $('#login-loading');
-  if(btn) btn.disabled = true;
-  if(loadingEl) loadingEl.classList.remove('hidden');
-  tapLogin().finally(() => {
-    if(loadingEl) loadingEl.classList.add('hidden');
-    if(btn) btn.disabled = false;
-  });
+  setLoginBusy(true, '正在连接 TapTap...');
+  tapLogin().finally(() => { if(!gameStarted) setLoginBusy(false); });
 }
 
 /**
  * 拉起 TapTap 登录，成功后把账号信息写入 S.taptap 并持久化
+ * @param {object} [opts]
+ * @param {boolean} [opts.silent] 自动登录场景：不弹"正在跳转"提示
  */
-async function tapLogin(){
+async function tapLogin(opts){
   if(!window.ChexingSDK){
     toast('登录功能暂不可用');
     return;
   }
-  if(!window.ChexingSDK.isNative){
+  if(!window.ChexingSDK.isTapEnv){
     toast('请在 TapTap 客户端中使用登录功能');
     return;
   }
-  toast('正在跳转到 TapTap 登录...');
+  const silent = !!(opts && opts.silent);
+  if(!silent) toast('正在跳转到 TapTap 登录...');
+  // 强制登录失败时，把按钮文案改成「重新登录」，引导玩家重试（不放行游客）
+  const markRetry = () => {
+    const btn = $('#login-btn');
+    if(btn){ const sp = btn.querySelector('span:last-child'); if(sp) sp.textContent = '重新登录 TapTap'; }
+  };
   try {
     const r = await window.ChexingSDK.login();
     if(r && r.success){
@@ -2027,21 +2265,37 @@ async function tapLogin(){
         openid: r.openid || null,
         unionid: r.unionid || null,
         name: r.name || null,
-        avatar: r.avatar || null
+        avatar: r.avatar || null,
+        code: r.code || null,   // H5 环境的登录凭证（一次性，5 分钟有效）
       };
       save();
-      toast('TapTap 登录成功：' + (S.taptap.name || S.taptap.openid));
-      ttComplianceStart();   // 登录成功后启动防沉迷合规
-      enterGame();           // 从登录页进入主游戏
+      if(!silent) toast('TapTap 登录成功：' + (S.taptap.name || 'TapTap 用户'));
+      proceedAfterLogin();   // 登录成功：拉云端存档 → 水合 → 进入游戏（其中会补全真实身份）
     } else {
       const m = (r && r.msg) || '';
-      if(m.indexOf('取消') >= 0) toast('已取消登录');
-      else toast(m ? ('登录失败：' + m) : '登录失败');
+      // TapTap 环境：强制登录，失败/取消一律不放行，停留在登录页让玩家重试
+      if(!window.ChexingSDK.isTapMiniGame){
+        // 浏览器调试环境：无真实 TapTap 登录能力，允许游客进入（仅开发用）
+        if(m.indexOf('取消') >= 0) toast('已取消登录（调试模式：游客进入）');
+        else toast('登录失败（调试模式：游客进入）：' + (m || ''));
+        setTimeout(enterGame, 900);
+        return;
+      }
+      if(m.indexOf('取消') >= 0) toast('需要登录 TapTap 账号才能进入游戏');
+      else toast('登录失败：' + (m || '') + '，请点击按钮重试');
+      markRetry();
     }
   } catch(e){
     const msg = (e && e.message) ? e.message : String(e);
-    if(msg.indexOf('取消') >= 0) toast('已取消登录');
-    else toast('登录失败：' + msg);
+    if(!window.ChexingSDK || !window.ChexingSDK.isTapMiniGame){
+      if(msg.indexOf('取消') >= 0) toast('已取消登录（调试模式：游客进入）');
+      else toast('登录异常（调试模式：游客进入）：' + msg);
+      setTimeout(enterGame, 900);
+      return;
+    }
+    if(msg.indexOf('取消') >= 0) toast('需要登录 TapTap 账号才能进入游戏');
+    else toast('登录异常：' + msg + '，请点击按钮重试');
+    markRetry();
   }
 }
 
@@ -2060,12 +2314,16 @@ async function tapLogout(){
 }
 
 /* ==================== TapTap 七大功能模块 ==================== */
-// 在 TapTap 开发者后台配置的榜单 ID（留空则原生端会提示）。可在此填入你的真实榜单 ID。
-const TAPTAP_LEADERBOARD_ID = '';
+// 在 TapTap 开发者后台「游戏服务 → 排行榜」创建**两个**排行榜后，复制 ID 填到此处：
+//   - 资产排名：分数=刀乐总额(S.dollars)，整数，降序
+//   - 身价排名：分数=雇佣身价(S.networth)，整数，降序
+// 留空时：打开对应榜单会提示"尚未配置"，提交分数会被静默跳过（不会报错）。
+const TAPTAP_LB_ASSETS = 'ujpraygcl92w7ibe7v';   // 资产排行榜 客户端ID（TapTap后台已创建并发布）
+const TAPTAP_LB_NETWORTH = 'vpxb3y7j0o1kmmy57n'; // 身价排行榜 客户端ID（TapTap后台已创建并发布）
 
 // 启动防沉迷合规（登录成功后或游戏启动时调用）
 async function ttComplianceStart(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative) return;
+  if(!window.ChexingSDK || !window.ChexingSDK.isTapEnv) return;
   const openId = (S.taptap && (S.taptap.openid || S.taptap.unionid)) || '';
   try { await window.ChexingSDK.complianceStartup({ openId }); }
   catch(e){ console.warn('[TapTap] compliance startup failed', e); }
@@ -2073,7 +2331,7 @@ async function ttComplianceStart(){
 
 // 去评价
 async function ttReview(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中使用评价功能'); return; }
+  if(!window.ChexingSDK || !window.ChexingSDK.isTapEnv){ toast('请在 TapTap 客户端中使用评价功能'); return; }
   toast('正在打开 TapTap 评价...');
   const r = await window.ChexingSDK.openReview();
   if(!(r && r.success)) toast((r && r.msg) ? ('打开评价失败：' + r.msg) : '打开评价失败');
@@ -2081,40 +2339,156 @@ async function ttReview(){
 
 // 分享游戏到 TapTap 动态（统一分享入口）
 async function ttShareToTapTap(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中使用分享功能'); return; }
+  if(!window.ChexingSDK || !window.ChexingSDK.isTapEnv){ toast('请在 TapTap 客户端中使用分享功能'); return; }
   const code = ensureInviteCode();
   toast('正在调起 TapTap 分享...');
   const r = await window.ChexingSDK.shareToTapTap({
     title: '抢车位：华夏崛起',
     contents: `【我的邀请码 ${code}】我在《抢车位：华夏崛起》停车赚钱，快来一起玩！`
   });
+  // tap.showShareboard 的 success 仅表示「面板拉起成功」，不等于用户已完成分享。
+  // 真正的分享结果（用户选了哪个渠道、是否发出去）由 TapTap 系统面板处理，H5 层拿不到回调。
+  // 因此：面板成功拉起时静默计数（任务进度），但不飘「分享成功」；失败才提示。
   if(r && r.success){
     S.stats.shareCount++; save(); updateNavDots();
     syncInviteRewards();
-    toast('分享成功');
+    // 不再 toast('分享成功') —— 用户还没真正分享呢
   } else {
     toast((r && r.msg) ? ('分享失败：' + r.msg) : '分享失败');
   }
 }
 
-// 打开排行榜
-async function ttOpenLeaderboard(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中查看排行榜'); return; }
-  if(!TAPTAP_LEADERBOARD_ID){
-    toast('排行榜尚未配置（请在 app.js 设置 TAPTAP_LEADERBOARD_ID）');
+// 打开排行榜（根据当前 rankTab 打开对应榜单：asset→资产榜 / networth→身价榜）
+async function ttOpenLeaderboard(tab){
+  if(!window.ChexingSDK || !window.ChexingSDK.isTapEnv){ toast('请在 TapTap 客户端中查看排行榜'); return; }
+  const lbId = (tab === 'networth') ? TAPTAP_LB_NETWORTH : TAPTAP_LB_ASSETS;
+  if(!lbId){
+    toast('排行榜尚未配置（请在 app.js 设置 TAPTAP_LB_ASSETS / TAPTAP_LB_NETWORTH）');
     return;
   }
   toast('正在打开 TapTap 排行榜...');
   const r = await window.ChexingSDK.openLeaderboard({
-    leaderboardId: TAPTAP_LEADERBOARD_ID,
+    leaderboardId: lbId,
     openId: (S.taptap && (S.taptap.openid || S.taptap.unionid)) || ''
   });
   if(!(r && r.success)) toast((r && r.msg) ? ('打开排行榜失败：' + r.msg) : '打开排行榜失败');
 }
 
+// 提交排行榜分数（资产变动时由 save() 自动调用，debounce 4s）
+// 同时提交两个榜单：资产榜=刀乐总额(S.dollars)，身价榜=雇佣身价(S.networth)
+let _lbSubmitTimer = null;
+function trySubmitLeaderboard(){
+  if(!window.ChexingSDK || !window.ChexingSDK.isTapEnv) return;
+  if(!TAPTAP_LB_ASSETS && !TAPTAP_LB_NETWORTH) return;   // 两个都没配才跳过
+  if(!S.taptap) return;
+  if(_lbSubmitTimer) return;
+  _lbSubmitTimer = setTimeout(async () => {
+    _lbSubmitTimer = null;
+    try {
+      const assetScore = Math.floor(Number(S.dollars) || 0);
+      const nwScore = Math.floor(Number(S.networth) || 0);
+      const promises = [];
+      if(TAPTAP_LB_ASSETS) promises.push(window.ChexingSDK.submitLeaderboardScore(TAPTAP_LB_ASSETS, assetScore));
+      if(TAPTAP_LB_NETWORTH) promises.push(window.ChexingSDK.submitLeaderboardScore(TAPTAP_LB_NETWORTH, nwScore));
+      await Promise.allSettled(promises);
+    } catch(e){ console.warn('[排行榜] 提交分数异常：', e); }
+  }, 4000);
+}
+
+/* ==================== TapTap 真实玩家池 ====================
+ * ⚠️ 平台事实（官方文档）：TapTap 小游戏【没有】关系链 API、【没有】按 ID 搜索玩家的接口、
+ *    也【没有】微信式开放数据域或 KV 存储；云存档只能读写自己的档。
+ *    因此在无自建后端的前提下，**排行榜是拿到其他真实玩家数据的唯一官方通道**：
+ *    loadLeaderboardScores 返回 { rank, score, user:{ name, avatar, openid, unionid } }。
+ * 这里把两个榜单（资产/身价）的数据合并成"真实玩家池"，供：
+ *    ① 全服排行榜展示真人 ② UID 搜索真人 ③ 加真人为好友
+ * 局限：只能看到上过榜的玩家（各榜前 200）；加好友是本地单向记录，对方不会收到申请。
+ */
+let TAP_PLAYER_POOL = [];        // [{uid, openid, name, avatar, assets, networth, rank, isTap:true}]
+let _tapPoolTs = 0;              // 上次成功拉取时间戳
+const TAP_POOL_TTL = 120000;     // 缓存 2 分钟，避免频繁请求
+
+/** 按资产估算一辆"最有价值的车"（真实玩家只有分数，没有车辆数据） */
+function guessCarByAssets(assetVal){
+  const v = Number(assetVal) || 0;
+  let best = CAR[0];
+  for(const c of CAR){ if((c.value||0) <= v && (!best || (c.value||0) > (best.value||0))) best = c; }
+  return (best && best.id) || 1;
+}
+
+/** 拉取并合并两个榜单的真实玩家（带缓存 + 并发合流） */
+async function fetchTapPlayers(force){
+  const CX = window.ChexingSDK;
+  if(!CX || !CX.isTapMiniGame) return TAP_PLAYER_POOL;
+  if(!force && _tapPoolTs && (now() - _tapPoolTs) < TAP_POOL_TTL) return TAP_PLAYER_POOL;
+  if(fetchTapPlayers._busy) return fetchTapPlayers._busy;
+  fetchTapPlayers._busy = (async () => {
+    try{
+      const [ra, rn] = await Promise.all([
+        TAPTAP_LB_ASSETS   ? CX.loadLeaderboardScores({ leaderboardId:TAPTAP_LB_ASSETS,   maxSize:200 }) : Promise.resolve(null),
+        TAPTAP_LB_NETWORTH ? CX.loadLeaderboardScores({ leaderboardId:TAPTAP_LB_NETWORTH, maxSize:200 }) : Promise.resolve(null),
+      ]);
+      const map = {};   // openid -> player
+      const merge = (res, field) => {
+        if(!res || !res.success || !Array.isArray(res.scores)) return;
+        res.scores.forEach(s => {
+          const u = s && s.user;
+          if(!u || !u.openid) return;
+          const oid = u.openid;
+          if(!map[oid]){
+            map[oid] = {
+              uid: String(uidFromOpenid(oid)),   // 与 BOT_POOL 一致用字符串，便于 data-fruid 比较
+              openid: oid,
+              name: u.name || 'TapTap玩家',
+              avatar: tapAvatarUrl(u.avatar) || '',
+              assets: 0, networth: 0, friendsCount: 0, isTap: true,
+            };
+          }
+          map[oid][field] = Math.max(0, Math.floor(Number(s.score) || 0));
+          if(field === 'assets') map[oid].rank = s.rank;
+        });
+      };
+      merge(ra, 'assets');
+      merge(rn, 'networth');
+
+      const myOid = (S.taptap && S.taptap.openid) || null;
+      const list = Object.values(map).filter(p => p.openid !== myOid);
+      list.forEach(p => {
+        // 身价缺失（只上了资产榜）时用资产折算，并封顶保证雇佣成本可承受
+        if(!p.networth) p.networth = Math.min(3000, calcNetworth(p.assets));
+        p.bestCarId = guessCarByAssets(p.assets);
+      });
+      TAP_PLAYER_POOL = list;
+      _tapPoolTs = now();
+      console.log('[TapTap玩家池] 已加载真实玩家', list.length, '人');
+    }catch(e){
+      console.warn('[TapTap玩家池] 拉取失败：', e);
+    }finally{
+      fetchTapPlayers._busy = null;
+    }
+    return TAP_PLAYER_POOL;
+  })();
+  return fetchTapPlayers._busy;
+}
+
+/** 在真实玩家池中按 UID 查找 */
+function findTapPlayer(uid){
+  const q = String(uid);
+  return TAP_PLAYER_POOL.find(p => String(p.uid) === q) || null;
+}
+
+/** 统一的"按 UID 找人"：本地机器人 → 内置玩家 → TapTap 真实玩家 */
+function findAnyPlayer(uid){
+  const q = String(uid);
+  return BOT_POOL.find(b => String(b.uid) === q)
+      || REAL_PLAYER_POOL.find(p => String(p.uid) === q)
+      || findTapPlayer(q)
+      || null;
+}
+
 // 打开成就面板
 async function ttShowAchievements(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中查看成就'); return; }
+  if(!window.ChexingSDK || !window.ChexingSDK.isTapEnv){ toast('请在 TapTap 客户端中查看成就'); return; }
   toast('正在打开 TapTap 成就...');
   const r = await window.ChexingSDK.showAchievements();
   if(!(r && r.success)) toast((r && r.msg) ? ('打开成就失败：' + r.msg) : '打开成就失败');
@@ -2122,7 +2496,7 @@ async function ttShowAchievements(){
 
 // 检查更新
 async function ttCheckUpdate(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中检查更新'); return; }
+  if(!window.ChexingSDK || !window.ChexingSDK.isTapEnv){ toast('请在 TapTap 客户端中检查更新'); return; }
   toast('正在检查更新...');
   const r = await window.ChexingSDK.checkUpdate();
   if(r && r.success) toast('已检查更新（如有新版本将自动提示）');
@@ -2131,7 +2505,7 @@ async function ttCheckUpdate(){
 
 // 正版验证
 async function ttCheckLicense(){
-  if(!window.ChexingSDK || !window.ChexingSDK.isNative){ toast('请在 TapTap 客户端中进行正版验证'); return; }
+  if(!window.ChexingSDK || !window.ChexingSDK.isTapEnv){ toast('请在 TapTap 客户端中进行正版验证'); return; }
   toast('正在进行正版验证...');
   const r = await window.ChexingSDK.checkLicense();
   if(r && r.success) toast('正版验证完成');
@@ -2209,8 +2583,8 @@ function redeemGiftCode(){
 async function shareGame(opts = {}){
   const code = ensureInviteCode();
 
-  // 原生环境：统一走 TapTap SDK 分享
-  if(window.ChexingSDK && window.ChexingSDK.isNative){
+  // TapTap 环境：统一走 TapTap SDK 分享
+  if(window.ChexingSDK && window.ChexingSDK.isTapEnv){
     return ttShareToTapTap();
   }
 
@@ -2532,7 +2906,7 @@ function renderEmployeeInfo(eidx){
   let curBoss = null;
   if(emp.hiredFrom){
     if(emp.hiredFrom === S.uid){
-      curBoss = {uid: S.uid, name: S.name, isMe: true}; // 玩家自己招募的员工
+      curBoss = {uid: S.uid, name: S.name, isMe: true, avatar: S.avatar}; // 玩家自己招募的员工
     } else {
       curBoss = S.friends.find(f => f.uid === emp.hiredFrom);
     }
@@ -2541,7 +2915,7 @@ function renderEmployeeInfo(eidx){
   let topBoss = null;
   if(emp.topHirerUid){
     if(emp.topHirerUid === S.uid){
-      topBoss = {uid: S.uid, name: S.name, isMe: true};
+      topBoss = {uid: S.uid, name: S.name, isMe: true, avatar: S.avatar};
     } else {
       topBoss = S.friends.find(f => f.uid === emp.topHirerUid);
     }
@@ -4055,18 +4429,27 @@ function renderFriendTab(){
   if(rankTab === 'new'){
     // 推荐车友：未添加的机器人优先；机器人不足10个时用真实玩家补充；
     // 机器人+真实玩家总人数不足10个则有多少显示多少
-    const recBots = BOT_POOL.filter(bot => !S.friends.some(f => f.uid === bot.uid));
-    const recReal = REAL_PLAYER_POOL.filter(p => !S.friends.some(f => f.uid === p.uid));
-    const recList = [...recBots, ...recReal].slice(0, 10);
+    const notFriend = (u) => !S.friends.some(f => String(f.uid) === String(u.uid));
+    const recBots = BOT_POOL.filter(notFriend);
+    const recReal = REAL_PLAYER_POOL.filter(notFriend);
+    // TapTap 环境：真实玩家（来自排行榜）排在推荐列表最前
+    const inTapEnv = !!(window.ChexingSDK && window.ChexingSDK.isTapMiniGame);
+    const recTap = inTapEnv ? TAP_PLAYER_POOL.filter(notFriend) : [];
+    if(inTapEnv && !_tapPoolTs){
+      // 首次进入该页签时后台拉一次真实玩家，拉到后重绘
+      fetchTapPlayers().then(() => { if(rankTab === 'new') renderFriendTab(); });
+    }
+    const recList = [...recTap, ...recBots, ...recReal].slice(0, 10);
     let botHtml = '';
     if(recList.length > 0){
       botHtml = '<div class="nf-section"><div class="nf-header">推荐车友</div><div class="nf-desc text-accent">以下车友可手动添加</div><div class="nf-bot-list">';
       recList.forEach(bot => {
         const c = CAR_BY_ID[bot.bestCarId] || CAR_BY_ID[1];
+        const ava = bot.avatar ? `<img class="rk-avatar-img" src="${bot.avatar}" alt="" onerror="this.style.display='none'">` : DEF_AVA;
         botHtml += `<div class="nf-bot-item">
-          <div class="rk-avatar">${DEF_AVA}</div>
+          <div class="rk-avatar">${ava}</div>
           <div class="rk-rating-box">${ratingBadge(c.rating)}</div>
-          <div class="nf-bot-info"><div class="nf-bot-name">${bot.name}</div><div class="nf-bot-sub">资产 ${f(bot.assets)}</div></div>
+          <div class="nf-bot-info"><div class="nf-bot-name">${bot.name}</div><div class="nf-bot-sub">资产 ${f(bot.assets)} · ID ${bot.uid}</div></div>
           <button class="rk-btn rk-btn-add" data-action="add-friend-rank" data-fruid="${bot.uid}">加好友</button>
         </div>`;
       });
@@ -4076,6 +4459,7 @@ function renderFriendTab(){
       <div class="nf-section">
         <div class="nf-header">添加游戏好友</div>
         <div class="nf-desc text-accent">输入车友的ID来申请好友</div>
+        <div class="nf-myid">我的ID：<b>${S.uid}</b><button class="nf-copy-btn" data-action="copy-my-uid">复制</button></div>
         <div class="nf-count-chip${friendCount() >= FRIEND_MAX ? ' full' : ''}">👥 我的好友 <b>${friendCount()}</b> / ${FRIEND_MAX}</div>
         <div class="nf-search-row">
           <input type="text" class="nf-input" placeholder="输入需要添加的玩家的ID" id="searchUidInput">
@@ -4107,12 +4491,34 @@ function renderFriendTab(){
   const sortBy = rankTab === 'asset' ? 'assets' : 'networth';
   const isGlobal = rankSubTab === 'global';
 
+  const meRow = {uid:S.uid, name:S.name, assets:assets(), networth:networth(), bestCarId:(S.inst[0]||{}).carId, isMe:true, avatar:S.avatar};
   let listData;
+  let tipHtml = '';
   if(isGlobal){
-    const virtualPlayers = REAL_PLAYER_POOL.map(vp => ({ ...vp, networth: calcNetworth(vp.assets) }));
-    listData = [...S.friends, {uid:S.uid, name:S.name, assets:assets(), networth:networth(), bestCarId:(S.inst[0]||{}).carId, isMe:true}, ...virtualPlayers];
+    const inTap = !!(window.ChexingSDK && window.ChexingSDK.isTapMiniGame);
+    if(inTap){
+      // ⭐ TapTap 环境：全服榜显示【真实玩家】（数据来自 TapTap 排行榜 API）
+      if(!_tapPoolTs){
+        // 首次进入：先显示加载态，拉到数据后自动重绘
+        fc.innerHTML = '<div class="rank-empty-tip">正在加载全服排行榜…</div>';
+        fetchTapPlayers().then(() => {
+          if(rankTab !== 'new' && rankSubTab === 'global') renderFriendTab();
+        });
+        return;
+      }
+      fetchTapPlayers();   // 后台按 TTL 静默刷新
+      if(TAP_PLAYER_POOL.length === 0){
+        tipHtml = '<div class="rank-empty-tip">全服榜暂无其他玩家上榜，快去积累资产抢占榜首！</div>';
+        listData = [...BOT_POOL, meRow];
+      } else {
+        listData = [...BOT_POOL, ...TAP_PLAYER_POOL, meRow];
+      }
+    } else {
+      const virtualPlayers = REAL_PLAYER_POOL.map(vp => ({ ...vp, networth: calcNetworth(vp.assets) }));
+      listData = [...S.friends, meRow, ...virtualPlayers];
+    }
   } else {
-    listData = [...S.friends, {uid:S.uid, name:S.name, assets:assets(), networth:networth(), bestCarId:(S.inst[0]||{}).carId, isMe:true}];
+    listData = [...S.friends, meRow];
   }
 
   // 排序
@@ -4123,11 +4529,11 @@ function renderFriendTab(){
   // 算成好友资产值（几十万）并写回存档，导致雇佣成本不可承受。
   // 虚拟玩家(vp_*)的身价在第2501行 map 时已用资产公式计算，仅用于排名展示、不可雇佣。
 
-  // 全服排名仅显示前10名；好友排名显示全部
-  if(isGlobal) listData = listData.slice(0, 10);
+  // 全服排名：TapTap 真实榜显示前 50，本地演示榜显示前 10；好友排名显示全部
+  if(isGlobal) listData = listData.slice(0, (window.ChexingSDK && window.ChexingSDK.isTapMiniGame) ? 50 : 10);
 
   // 渲染列表（按原型：奖牌+头像+评级+车辆图+名称+数值+状态+按钮）
-  let h = '<div class="rank-list">';
+  let h = tipHtml + '<div class="rank-list">';
   listData.forEach((fr, i) => {
     const c = CAR_BY_ID[fr.bestCarId] || CAR_BY_ID[1];
     const isMe = fr.isMe;
@@ -4166,9 +4572,12 @@ function renderFriendTab(){
       actionBtn = `<button class="rk-btn rk-btn-add" data-action="add-friend-rank" data-fruid="${fr.uid}">加好友</button>`;
     }
 
+    // 真实 TapTap 玩家用其账号头像；无头像/机器人回退默认头像
+    const avaHtml = fr.avatar ? `<img class="rk-avatar-img" src="${fr.avatar}" alt="" onerror="this.style.display='none'">` : DEF_AVA;
+
     h += `<div class="rk-row" data-action="show-user-info" data-fruid="${fr.uid}">
       <div class="rk-left">${medalHtml}</div>
-      <div class="rk-avatar">${DEF_AVA}</div>
+      <div class="rk-avatar">${avaHtml}</div>
       <div class="rk-car-thumb">${thumb(c.id)}<span class="rk-rating-on-car">${ratingBadge(c.rating)}</span></div>
       <div class="rk-info">
         <div class="rk-name" data-action="show-user-info" data-fruid="${fr.uid}">${fr.name}</div>
@@ -4191,7 +4600,7 @@ function showUserInfoPopup(fruid){
   if(fruid == S.uid){
     fr = {uid:S.uid, name:S.name, assets:assets(), networth:networth(), isMe:true};
   } else {
-    fr = S.friends.find(f => f.uid == fruid);
+    fr = S.friends.find(f => f.uid == fruid) || findAnyPlayer(fruid);
     if(!fr) fr = {uid:fruid, name:'未知玩家', assets:0, networth:0};
   }
   const topCar = fr.isMe ?
@@ -4208,7 +4617,7 @@ function showUserInfoPopup(fruid){
       </div>
       <div class="uip-body">
         <div class="uip-top-row">
-          <div class="uip-avatar">👤</div>
+          <div class="uip-avatar">${S.avatar ? `<img src="${S.avatar}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : '👤'}</div>
           <div class="uip-stats-col">
             <div class="uip-stat-row"><span class="uip-stat-icon">🏆</span>身价：<b>${f(fr.networth)}</b></div>
             <div class="uip-stat-row"><span class="uip-stat-icon">${ASSET_IC}</span>资产：<b>${f(fr.assets)}</b></div>
@@ -4917,6 +5326,7 @@ function gachaSpin(){
       let msg = '';
       if(selected.type === 'dollars'){
         S.dollars += selected.val; msg = `🎉 ${selected.label}！获得 ${f(selected.val)} 刀乐`;
+        showFloatGain(`${DOLLAR_IC}<span>刀乐+${f(selected.val)}</span>`, '#gwCenter');
       } else if(selected.type === 'stamina'){
         gainGachaStamina(selected.val + 1); // +1 抵消本次 spin 消耗的 1 次，确保"3次夺宝"实际净得+3
         msg = `🎡 ${selected.label}！获得 +${selected.val} 次夺宝`;
@@ -5267,8 +5677,10 @@ document.addEventListener('click', e => {
       $$('.rank-tab').forEach(t => t.classList.toggle('active', t.dataset.rtab === rankTab));
       break;
     case 'reset-save':
-      ask('⚠️ 确定要清空全部进度吗？\n此操作不可恢复！', ()=>{
+      ask('⚠️ 确定要清空全部进度吗？\n此操作会同时清除云端存档，不可恢复！', ()=>{
         try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+        // 同时清除 TapTap 云存档，避免本地清了云端还在（换设备或重装后恢复出旧档）
+        try{ if(window.ChexingSDK && window.ChexingSDK.isTapMiniGame) window.ChexingSDK.deleteCloud().catch(()=>{}); }catch(_){}
         toast('存档已清空，正在重置…');
         setTimeout(()=>location.reload(), 600);
       });
@@ -5421,6 +5833,20 @@ document.addEventListener('click', e => {
     case 'open-park-at-friend': renderParkAtFriendModal(parseInt(el.dataset.fspotIdx)||0); break;
     case 'park-at-friend': doParkAtFriend(parseInt(el.dataset.iid)); break;
     case 'search-user': searchUser(); break;
+    case 'copy-my-uid': {
+      const myId = String(S.uid);
+      const ok = () => toast('已复制我的ID：' + myId);
+      try{
+        if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(myId).then(ok).catch(()=>toast('我的ID：'+myId)); }
+        else {
+          const ta = document.createElement('textarea');
+          ta.value = myId; ta.style.position='fixed'; ta.style.opacity='0';
+          document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+          ok();
+        }
+      }catch(e){ toast('我的ID：' + myId); }
+      break;
+    }
     case 'accept-friend': acceptFriend(el.dataset.mid); break;
     case 'reject-friend': rejectFriend(el.dataset.mid); break;
     case 'show-user-info': showUserInfoPopup(el.dataset.fruid); break;
@@ -5450,7 +5876,7 @@ document.addEventListener('click', e => {
     // TapTap 七大功能模块
     case 'tt-review': ttReview(); break;
     case 'tt-share': ttShareToTapTap(); break;
-    case 'tt-leaderboard': ttOpenLeaderboard(); break;
+    case 'tt-leaderboard': ttOpenLeaderboard(rankTab); break;
     case 'tt-achievements': ttShowAchievements(); break;
     case 'tt-check-update': ttCheckUpdate(); break;
     case 'tt-check-license': ttCheckLicense(); break;
@@ -5780,28 +6206,47 @@ function claimGallery(gid){
   renderGalleryTab();
 }
 // 搜索玩家：可传 uid 直接调用，或不传参数则从 #searchUidInput 读取
-function searchUser(uid){
+// 查找顺序：已有好友 → 本地机器人/内置玩家 → TapTap 真实玩家池（必要时实时拉一次排行榜）
+async function searchUser(uid){
   const q = (uid !== undefined) ? String(uid).trim() : (function(){ const input = $('#searchUidInput'); return input ? input.value.trim() : ''; })();
   if(!q){ toast('请输入正确的ID'); return; }
-  const bot = BOT_POOL.find(b => b.uid === q) || REAL_PLAYER_POOL.find(p => p.uid === q);
-  if(!bot){ toast('请输入正确的ID'); return; }
+  if(String(S.uid) === q){ toast('这是你自己的 ID'); return; }
+
+  let target = S.friends.find(f => String(f.uid) === q) || findAnyPlayer(q);
+
+  // TapTap 环境下再实时拉一次排行榜（对方可能刚上榜，本地缓存还没有）
+  if(!target && window.ChexingSDK && window.ChexingSDK.isTapMiniGame){
+    toast('正在全服查找…');
+    await fetchTapPlayers(true);
+    target = findTapPlayer(q);
+  }
+  if(!target){
+    toast(window.ChexingSDK && window.ChexingSDK.isTapMiniGame
+      ? '未找到该玩家<br><span style="font-size:12px;opacity:.8">对方需先上过全服排行榜才能被搜到</span>'
+      : '请输入正确的ID');
+    return;
+  }
   // 弹出对方信息面板（面板内自带"加好友"/"删除好友"按钮）
   showUserInfoPopup(q);
 }
 // 手动添加车友（机器人来自 BOT_POOL，真实玩家来自 REAL_PLAYER_POOL）
 function addFriend(fruid){
-  if(S.friends.some(f => f.uid === fruid)){ toast('已经是好友了'); return; }
+  if(S.friends.some(f => String(f.uid) === String(fruid))){ toast('已经是好友了'); return; }
   // 1) 玩家自身好友上限
   if(friendCount() >= FRIEND_MAX){ toast('好友数量已达上限'); return; }
-  const bot = BOT_POOL.find(b => b.uid === fruid) || REAL_PLAYER_POOL.find(p => p.uid === fruid);
-  if(!bot){ toast('找不到该玩家（演示）'); return; }
+  const bot = findAnyPlayer(fruid);   // 含 TapTap 真实玩家
+  if(!bot){ toast('找不到该玩家'); return; }
   // 2) 对方好友上限（对方已是满友状态，无法再接收好友申请）
   if((bot.friendsCount || 0) >= FRIEND_MAX){ toast('对方好友数量已达上限'); return; }
   // 机器人自带 networth；真实玩家用资产换算并封顶，保证可雇佣
   const networth = bot.networth || Math.min(3000, calcNetworth(bot.assets));
   S.friends.push(Object.assign({}, bot, { isFriend:true, networth }));
   bot.friendsCount = (bot.friendsCount || 0) + 1; // 模拟：对方好友数 +1
-  toast(`已添加 ${bot.name} 为好友`);
+  // TapTap 真实玩家：小游戏平台无关系链/好友申请 API，此处为本地单向关注，如实告知
+  if(bot.isTap) toast(`已关注 ${bot.name}<br><span style="font-size:12px;opacity:.8">对方不会收到申请通知</span>`);
+  else toast(`已添加 ${bot.name} 为好友`);
+  checkFspotUnlock();   // 好友数达标后立即解锁对应好友车位
+  refreshFspotGrid();
   save();
   renderFriendTab();
 }
@@ -5826,6 +6271,8 @@ function acceptFriend(mid){
     toast('已经是好友了');
   }
   m.claimed = true;
+  checkFspotUnlock();   // 同意好友申请后好友数+1，立即解锁对应好友车位
+  refreshFspotGrid();
   save(); renderMsgTab();
 }
 function rejectFriend(mid){

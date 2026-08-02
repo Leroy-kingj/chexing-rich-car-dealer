@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>抢车位：华夏崛起</title>
-<link rel="stylesheet" href="css/style.css?v=20260727au">
+<link rel="stylesheet" href="css/style.css?v=20260802tt20">
 </head>
 <body>
 <div id="app">
@@ -17,7 +17,8 @@
       <span class="login-btn-icon">🎮</span>
       <span>TapTap 登录</span>
     </button>
-    <div class="login-skip" data-action="splash-skip-login">跳过登录</div>
+    <!-- 强制登录：默认隐藏；仅在确认"非 TapTap 环境"(SDK 探测超时)后由 app.js 放出，供浏览器调试 -->
+    <div class="login-skip" data-action="splash-skip-login" style="display:none">跳过登录</div>
     <div class="login-footer">v1.0.0 · TapTap 独家首发</div>
   </div>
   <div class="login-loading hidden" id="login-loading">
@@ -142,8 +143,8 @@
 
 </div><!-- /#app -->
 
-<script src="game_data.js?v=20260727au"></script>
-<script src="chexing-sdk.js?v=20260727au"></script>
-<script src="app.js?v=20260727au"></script>
+<script src="game_data.js?v=20260802tt20"></script>
+<script src="chexing-sdk.js?v=20260802tt20"></script>
+<script src="app.js?v=20260802tt20"></script>
 </body>
 </html>
